@@ -38,8 +38,13 @@ export function useFheInstance() {
         const numericChainId = Number(network.chainId);
         const gatewayUrl = CONTRACT_ADDRESSES.GATEWAY;
 
+        const ethersProvider = provider.provider || window.ethereum;
+        if (!ethersProvider) {
+          throw new Error('No Ethereum provider available');
+        }
+
         const fheInstance = await initFhevm(
-          window.ethereum,
+          ethersProvider,
           numericChainId,
           gatewayUrl
         );
