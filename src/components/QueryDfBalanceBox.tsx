@@ -8,6 +8,12 @@ import { initFhevm, getFhevmInstance } from '@/fhevm/fhe-client';
 import { useWalletContext } from '@/contexts/WalletContext';
 import { useNotificationContext } from '@/contexts/NotificationContext';
 
+interface FheInstance {
+  generateKeypair: () => { publicKey: string; privateKey: string };
+  createEIP712: (publicKey: string, contractAddresses: string[], startTimeStamp: string, durationDays: string) => Record<string, unknown>;
+  userDecrypt: (handleContractPairs: Array<{ handle: unknown; contractAddress: string }>, privateKey: string, publicKey: string, signature: string, contractAddress: string[], userAddress: string, startTimeStamp: string, durationDays: string) => Promise<Record<string, bigint | string>>;
+}
+
 export default function QueryDfBalanceBox() {
   const { isConnected, provider } = useWalletContext();
   const { showNotification } = useNotificationContext();
@@ -94,7 +100,7 @@ export default function QueryDfBalanceBox() {
         return;
       }
 
-      const keypair = instance.generateKeypair();
+      const keypair = (instance as FheInstance).generateKeypair();
       const handleContractPairs = [
         { handle: encBal, contractAddress: CONTRACT_ADDRESSES.FHE_TOKEN },
       ];
@@ -102,20 +108,20 @@ export default function QueryDfBalanceBox() {
       const durationDays = '10';
       const contractAddresses = [CONTRACT_ADDRESSES.FHE_TOKEN];
 
-      const eip712 = instance.createEIP712(
+      const eip712 = (instance as FheInstance).createEIP712(
         keypair.publicKey,
         contractAddresses,
         startTimeStamp,
         durationDays
-      );
+      ) as { domain: Record<string, unknown>; types: Record<string, unknown>; message: Record<string, unknown> };
 
-      const signature = await signer.signTypedData(
+      const signature = await (signer.signTypedData as (domain: unknown, types: unknown, message: unknown) => Promise<string>)(
         eip712.domain,
-        { UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification },
+        eip712.types,
         eip712.message
       );
 
-      const result = await instance.userDecrypt(
+      const result = await (instance as FheInstance).userDecrypt(
         handleContractPairs,
         keypair.privateKey,
         keypair.publicKey,
