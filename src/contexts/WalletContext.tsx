@@ -149,10 +149,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       } else {
         setWalletState(prev => ({ ...prev, chainId }));
       }
-      
-      if (chainId !== DEFAULT_CHAIN.chainId) {
-        switchChain().catch(console.error);
-      }
     };
 
     const handleDisconnect = () => {

@@ -22,16 +22,21 @@ export function useFheInstance() {
       if (!sdkInitialized || !isConnected || !provider) {
         setInstance(null);
         lastChainIdRef.current = null;
+        setNeedsNetworkSwitch(false);
+        setError(null);
         return;
       }
 
       if (chainId !== DEFAULT_CHAIN.chainId) {
         setNeedsNetworkSwitch(true);
         setError(`Please switch to ${DEFAULT_CHAIN.chainName} network`);
+        setInstance(null);
+        lastChainIdRef.current = null;
         return;
       }
 
       if (instance && chainId === lastChainIdRef.current && !isInitializingRef.current) {
+        setNeedsNetworkSwitch(false);
         return;
       }
 
@@ -81,6 +86,8 @@ export function useFheInstance() {
         if (err && typeof err === 'object' && 'code' in err && err.code === 'NETWORK_ERROR' && 'event' in err && err.event === 'changed') {
           console.warn('Network changed during initialization, will retry automatically');
           setError(null);
+          setInstance(null);
+          lastChainIdRef.current = null;
         } else {
           console.error('Failed to create FHE instance:', err);
           const errorMessage = err instanceof Error ? err.message : String(err);
@@ -93,6 +100,8 @@ export function useFheInstance() {
           }
           
           setError(friendlyMessage);
+          setInstance(null);
+          lastChainIdRef.current = null;
         }
       } finally {
         setIsLoading(false);
@@ -102,10 +111,14 @@ export function useFheInstance() {
 
     createFheInstance();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sdkInitialized, isConnected, chainId, instance]);
+  }, [sdkInitialized, isConnected, chainId, provider]);
 
   const handleSwitchNetwork = async () => {
     try {
+      setInstance(null);
+      lastChainIdRef.current = null;
+      isInitializingRef.current = false;
+      
       await switchChain();
       setNeedsNetworkSwitch(false);
       setError(null);
