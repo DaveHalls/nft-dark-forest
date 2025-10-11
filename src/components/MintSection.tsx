@@ -198,6 +198,12 @@ export default function MintSection() {
             {isMinting ? 'Minting...' : 'Mint Hero'}
           </button>
 
+          <p className="mt-1 text-center text-gray-400">
+            Currently there are{' '}
+            <span className="text-red-400 text-xl font-semibold align-baseline">{totalMinted}</span>{' '}
+            heroes roaming in the Dark Forest
+          </p>
+
           {!isConnected && (
             <p className="text-sm text-red-400 mt-2">
               Please connect wallet first
@@ -215,11 +221,6 @@ export default function MintSection() {
       </div>
 
       <div className="mb-8">
-        <p className="text-center mb-4 text-gray-400">
-          Currently there are{' '}
-          <span className="text-red-400 text-xl font-semibold align-baseline">{totalMinted}</span>{' '}
-          heroes roaming in the Dark Forest
-        </p>
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
           {HERO_CLASSES.map((hero) => (
             <HeroCard
