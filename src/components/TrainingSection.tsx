@@ -99,7 +99,7 @@ export default function TrainingSection() {
       const nft = new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, provider);
       
       const currentBlock = await provider.getBlockNumber();
-      const fromBlock = Math.max(0, currentBlock - 100000);
+      const fromBlock = Math.max(0, currentBlock - 50000);
 
       // Use Transfer events to find user's NFTs
       const transferToFilter = nft.filters.Transfer(null, address);
@@ -278,7 +278,7 @@ export default function TrainingSection() {
       
       let cachedStartedEvents: TrainingEvent[] = [];
       let cachedFinishedEvents: TrainingEvent[] = [];
-      let fromBlock = Math.max(0, currentBlock - 100000);
+      let fromBlock = Math.max(0, currentBlock - 50000);
       
       try {
         const cachedData = localStorage.getItem(cacheKey);
@@ -295,10 +295,21 @@ export default function TrainingSection() {
       const startedEvents: TrainingEvent[] = [...cachedStartedEvents];
       const finishedEvents: TrainingEvent[] = [...cachedFinishedEvents];
       
-      const [upStartEvents, upFinishEvents] = await Promise.all([
-        nft.queryFilter(nft.filters.UpgradeStarted(), fromBlock, 'latest'),
-        nft.queryFilter(nft.filters.UpgradeFinished(), fromBlock, 'latest')
-      ]);
+      let upStartEvents, upFinishEvents;
+      try {
+        [upStartEvents, upFinishEvents] = await Promise.all([
+          nft.queryFilter(nft.filters.UpgradeStarted(), fromBlock, 'latest'),
+          nft.queryFilter(nft.filters.UpgradeFinished(), fromBlock, 'latest')
+        ]);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        if (errorMessage.includes('rate limit') || errorMessage.includes('429') || errorMessage.includes('Too Many Requests')) {
+          console.warn('RPC rate limit reached, using cached training history');
+          setTrainingRecords([]);
+          return;
+        }
+        throw err;
+      }
 
       const blockCache = new Map<number, number>();
       const getBlockTimestamp = async (blockNumber: number) => {
@@ -416,7 +427,12 @@ export default function TrainingSection() {
         localStorage.setItem(lastBlockKey, String(maxBlock || currentBlock));
       } catch {}
     } catch (e) {
-      console.error('Failed to load training history:', e);
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      if (errorMessage.includes('rate limit') || errorMessage.includes('429') || errorMessage.includes('Too Many Requests')) {
+        console.warn('RPC rate limit exceeded when loading training history');
+      } else {
+        console.error('Failed to load training history:', e);
+      }
     }
   };
 

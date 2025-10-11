@@ -148,7 +148,7 @@ export default function MyNFTs() {
       );
 
       const currentBlock = await provider.getBlockNumber();
-      const fromBlock = Math.max(0, currentBlock - 100000);
+      const fromBlock = Math.max(0, currentBlock - 50000);
 
       // Use Transfer events to find user's NFTs (much faster than iterating all)
       const transferToFilter = nftContract.filters.Transfer(null, address);
