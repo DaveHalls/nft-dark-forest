@@ -123,7 +123,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
     const initTimeOffset = async () => {
       if (!provider || isInitialized) return;
       try {
-        const currentBlock = await provider.getBlock('latest');
+        const currentBlock = await (provider as unknown as { getBlock: (tag: string) => Promise<{ timestamp?: number } | null> }).getBlock('latest');
         const blockTime = currentBlock?.timestamp || Math.floor(Date.now() / 1000);
         const localTime = Math.floor(Date.now() / 1000);
         timeOffset = blockTime - localTime;
@@ -225,7 +225,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
 
       // Double check if on-chain time meets requirements
       const battleRequest = await nftContract.getBattleRequest(BigInt(battle.requestId));
-      const currentBlock = await provider.getBlock('latest');
+      const currentBlock = await (provider as unknown as { getBlock: (tag: string) => Promise<{ timestamp?: number } | null> }).getBlock('latest');
       const currentTime = currentBlock?.timestamp || Math.floor(Date.now() / 1000);
       const revealTime = Number(battleRequest.revealTime);
       
