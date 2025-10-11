@@ -643,14 +643,36 @@ export default function MyNFTs() {
               losses: nft.losses,
             }))}
             onBattleUpdate={(requestId, updates) => {
-              setBattleList(prev => 
-                prev.map(b => 
+              setBattleList(prev => {
+                const updated = prev.map(b => 
                   b.requestId === requestId ? { ...b, ...updates } : b
-                )
-              );
+                );
+                
+                // Sync to localStorage cache immediately
+                try {
+                  const cacheKey = `battleHistory_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
+                  localStorage.setItem(cacheKey, JSON.stringify(updated));
+                } catch (err) {
+                  console.warn('Failed to update battle cache:', err);
+                }
+                
+                return updated;
+              });
             }}
             onBattleRemove={(requestId) => {
-              setBattleList(prev => prev.filter(b => b.requestId !== requestId));
+              setBattleList(prev => {
+                const updated = prev.filter(b => b.requestId !== requestId);
+                
+                // Sync to localStorage cache immediately
+                try {
+                  const cacheKey = `battleHistory_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
+                  localStorage.setItem(cacheKey, JSON.stringify(updated));
+                } catch (err) {
+                  console.warn('Failed to update battle cache:', err);
+                }
+                
+                return updated;
+              });
             }}
             onBattleComplete={loadMyNFTs}
             onClearCache={() => {
