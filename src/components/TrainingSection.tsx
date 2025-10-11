@@ -56,6 +56,7 @@ export default function TrainingSection() {
   const [selectedNFT, setSelectedNFT] = useState<OwnedNFT | null>(null);
   const [isOperatorApproved, setIsOperatorApproved] = useState(false);
   const lastLoadAddressRef = useRef<string | null>(null);
+  const lastLoadTimeRef = useRef<number>(0);
   const [isInfoExpanded, setIsInfoExpanded] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('trainingInfoExpanded');
@@ -84,8 +85,15 @@ export default function TrainingSection() {
     return new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, signer);
   };
 
-  const loadOwned = async (): Promise<OwnedNFT[] | undefined> => {
+  const loadOwned = async (force = false): Promise<OwnedNFT[] | undefined> => {
     if (!provider || !address) return;
+    
+    const now = Date.now();
+    if (!force && now - lastLoadTimeRef.current < 3000) {
+      return;
+    }
+    lastLoadTimeRef.current = now;
+    
     try {
       setIsLoading(true);
       const nft = new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, provider);
@@ -636,7 +644,7 @@ export default function TrainingSection() {
       showNotification('Complete training transaction submitted', 'info');
       await tx.wait();
       await loadUpgradeState(tokenId);
-      const updatedList = await loadOwned();
+      const updatedList = await loadOwned(true);
       if (updatedList) {
         await loadTrainingHistory(updatedList);
       }
@@ -789,7 +797,7 @@ export default function TrainingSection() {
                 const lastBlockKey = `lastTrainingBlock_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
                 localStorage.removeItem(cacheKey);
                 localStorage.removeItem(lastBlockKey);
-                loadOwned();
+                loadOwned(true);
                 showNotification('Cache cleared, reloading', 'info');
               }}
               className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-400 hover:text-gray-200 rounded transition-colors"
@@ -840,7 +848,7 @@ export default function TrainingSection() {
         <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 flex flex-col h-[calc(100vh-12rem)] max-h-[700px]">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-xl font-bold text-gray-200">Select Hero</h3>
-            <button onClick={loadOwned} disabled={isLoading} className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded">
+            <button onClick={() => loadOwned(true)} disabled={isLoading} className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded">
               {isLoading ? 'Refreshing...' : 'Refresh'}
             </button>
           </div>
