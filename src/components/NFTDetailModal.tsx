@@ -25,6 +25,12 @@ interface DecryptedAttributes {
   luck: number;
 }
 
+interface FheInstance {
+  generateKeypair: () => { publicKey: string; privateKey: string };
+  createEIP712: (publicKey: string, contractAddresses: string[], startTimeStamp: string, durationDays: string) => Record<string, unknown>;
+  userDecrypt: (handleContractPairs: Array<{ handle: unknown; contractAddress: string }>, privateKey: string, publicKey: string, signature: string, contractAddress: string[], userAddress: string, startTimeStamp: string, durationDays: string) => Promise<Array<bigint | string>>;
+}
+
 export default function NFTDetailModal({
   tokenId,
   classId,
@@ -65,7 +71,7 @@ export default function NFTDetailModal({
       
       console.log('Encrypted attributes fetched successfully:', encryptedAttrs);
 
-      const keypair = fheInstance.generateKeypair();
+      const keypair = (fheInstance as FheInstance).generateKeypair();
       console.log('Keypair generated successfully');
 
       
@@ -81,23 +87,23 @@ export default function NFTDetailModal({
       const durationDays = '10';
       const contractAddresses = [CONTRACT_ADDRESSES.NFT_DARK_FOREST];
 
-      const eip712 = fheInstance.createEIP712(
+      const eip712 = (fheInstance as FheInstance).createEIP712(
         keypair.publicKey,
         contractAddresses,
         startTimeStamp,
         durationDays
-      );
+      ) as { domain: Record<string, unknown>; types: Record<string, unknown>; message: Record<string, unknown> };
       console.log('EIP712 data created successfully');
 
-      const signature = await signer.signTypedData(
+      const signature = await (signer.signTypedData as (domain: unknown, types: unknown, message: unknown) => Promise<string>)(
         eip712.domain,
-        { UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification },
+        eip712.types,
         eip712.message
       );
       console.log('User signature successful');
 
       console.log('Starting user decryption...');
-      const result = await fheInstance.userDecrypt(
+      const result = await (fheInstance as FheInstance).userDecrypt(
         handleContractPairs,
         keypair.privateKey,
         keypair.publicKey,
