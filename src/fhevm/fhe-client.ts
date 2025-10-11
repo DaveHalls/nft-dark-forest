@@ -34,8 +34,7 @@ export async function encryptValue(value: number): Promise<Uint8Array> {
 }
 
 export async function requestDecryption(
-  contractAddress: string,
-  _userAddress: string
+  contractAddress: string
 ): Promise<string> {
   const instance = getFhevmInstance() as { generateToken: (opts: { verifyingContract: string }) => Promise<string> };
   return instance.generateToken({

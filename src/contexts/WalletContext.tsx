@@ -187,7 +187,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     };
 
     reconnect();
-  }, [availableWallets]);
+  }, [availableWallets, connectWallet]);
 
   return (
     <WalletContext.Provider

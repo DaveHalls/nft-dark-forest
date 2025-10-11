@@ -343,8 +343,7 @@ export default function TrainingSection() {
       }
       
       // dedupe by tokenId-attrIndex with most recent blockNumber
-      const startedKey = (e: TrainingEvent) => `${e.tokenId}-${e.attrIndex}-${e.blockNumber}`;
-      const finishKey = (e: TrainingEvent) => `${e.tokenId}-${e.attrIndex}-${e.blockNumber}`;
+      
 
       const records: TrainingRecord[] = [];
       

@@ -34,10 +34,10 @@ export default function QueryDfBalanceBox() {
     };
   }, [isContractDropdownOpen]);
 
-  const isZeroHandle = (h: any): boolean => {
+  const isZeroHandle = (h: unknown): boolean => {
     try {
       if (!h) return true;
-      const v = typeof h === 'string' ? BigInt(h) : BigInt(h.toString());
+      const v = typeof h === 'string' ? BigInt(h) : BigInt((h as { toString: () => string }).toString());
       return v === BigInt(0);
     } catch {
       return false;
@@ -59,8 +59,8 @@ export default function QueryDfBalanceBox() {
 
       const ethProvider = provider
         ? provider
-        : (typeof window !== 'undefined' && (window as any).ethereum
-            ? new ethers.BrowserProvider((window as any).ethereum)
+        : (typeof window !== 'undefined' && (window as unknown as { ethereum?: unknown }).ethereum
+            ? new ethers.BrowserProvider((window as unknown as { ethereum: unknown }).ethereum as any)
             : null);
       if (!ethProvider) {
         showNotification('Wallet not available', 'error');
@@ -70,10 +70,10 @@ export default function QueryDfBalanceBox() {
       const signer = await ethProvider.getSigner();
       const userAddress = await signer.getAddress();
 
-      const ethereum = (provider as any)?.provider ?? (typeof window !== 'undefined' ? (window as any).ethereum : undefined);
-      const hasEip1193 = !!ethereum && typeof ethereum.request === 'function';
+      const ethereum = (provider as { provider?: unknown })?.provider ?? (typeof window !== 'undefined' ? (window as { ethereum?: unknown }).ethereum : undefined);
+      const hasEip1193 = !!ethereum && typeof (ethereum as { request?: unknown }).request === 'function';
       const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL;
-      const networkArg: any = hasEip1193 ? ethereum : rpcUrl;
+      const networkArg: unknown = hasEip1193 ? ethereum : rpcUrl;
       await initFhevm(networkArg, Number(network.chainId), CONTRACT_ADDRESSES.GATEWAY);
       const instance = getFhevmInstance();
 
@@ -129,8 +129,8 @@ export default function QueryDfBalanceBox() {
       const value = typeof plain === 'bigint' ? plain.toString() : plain.toString();
       setBalance(value);
       showNotification('Query successful', 'success');
-    } catch (e: any) {
-      const msg = e?.message || String(e);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
         showNotification('Query cancelled', 'info');
       } else {
@@ -156,8 +156,8 @@ export default function QueryDfBalanceBox() {
 
       const ethProvider = provider
         ? provider
-        : (typeof window !== 'undefined' && (window as any).ethereum
-            ? new ethers.BrowserProvider((window as any).ethereum)
+        : (typeof window !== 'undefined' && (window as unknown as { ethereum?: unknown }).ethereum
+            ? new ethers.BrowserProvider((window as unknown as { ethereum: unknown }).ethereum as any)
             : null);
       if (!ethProvider) {
         showNotification('Wallet not available', 'error');
@@ -170,8 +170,8 @@ export default function QueryDfBalanceBox() {
       const pending = await nft.getPendingReward(userAddress);
       setPendingReward(pending.toString());
       showNotification('Refresh successful', 'success');
-    } catch (e: any) {
-      const msg = e?.message || String(e);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
         showNotification('Refresh cancelled', 'info');
       } else {
@@ -197,8 +197,8 @@ export default function QueryDfBalanceBox() {
 
       const ethProvider = provider
         ? provider
-        : (typeof window !== 'undefined' && (window as any).ethereum
-            ? new ethers.BrowserProvider((window as any).ethereum)
+        : (typeof window !== 'undefined' && (window as unknown as { ethereum?: unknown }).ethereum
+            ? new ethers.BrowserProvider((window as unknown as { ethereum: unknown }).ethereum as any)
             : null);
       if (!ethProvider) {
         showNotification('Wallet not available', 'error');
@@ -214,8 +214,8 @@ export default function QueryDfBalanceBox() {
       showNotification('Claim successful!', 'success');
 
       await handleRefreshReward();
-    } catch (e: any) {
-      const msg = e?.message || String(e);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
         showNotification('Claim cancelled', 'info');
       } else {
