@@ -10,7 +10,7 @@ import { useNotificationContext } from '@/contexts/NotificationContext';
 
 interface FheInstance {
   generateKeypair: () => { publicKey: string; privateKey: string };
-  createEIP712: (publicKey: string, contractAddresses: string[], startTimeStamp: string, durationDays: string) => Record<string, unknown>;
+  createEIP712: (publicKey: string, contractAddresses: string[], startTimeStamp: string, durationDays: string) => { domain: Record<string, unknown>; types: { UserDecryptRequestVerification: Array<{ name: string; type: string }> }; message: Record<string, unknown> };
   userDecrypt: (handleContractPairs: Array<{ handle: unknown; contractAddress: string }>, privateKey: string, publicKey: string, signature: string, contractAddress: string[], userAddress: string, startTimeStamp: string, durationDays: string) => Promise<Record<string, bigint | string>>;
 }
 
@@ -113,11 +113,11 @@ export default function QueryDfBalanceBox() {
         contractAddresses,
         startTimeStamp,
         durationDays
-      ) as { domain: Record<string, unknown>; types: Record<string, unknown>; message: Record<string, unknown> };
+      );
 
-      const signature = await (signer.signTypedData as (domain: unknown, types: unknown, message: unknown) => Promise<string>)(
+      const signature = await signer.signTypedData(
         eip712.domain,
-        eip712.types,
+        { UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification },
         eip712.message
       );
 
