@@ -83,8 +83,16 @@ export function useFheInstance() {
           setError(null);
         } else {
           console.error('Failed to create FHE instance:', err);
-          const message = err instanceof Error ? err.message : 'Failed to create FHE instance';
-          setError(message);
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          
+          let friendlyMessage = 'Failed to create FHE instance';
+          if (errorMessage.includes('Too Many Requests') || errorMessage.includes('-32005')) {
+            friendlyMessage = 'RPC rate limit reached. Please configure your own RPC URL or wait a moment';
+          } else if (errorMessage.includes('BAD_DATA')) {
+            friendlyMessage = 'Failed to connect to blockchain. Please check your network connection';
+          }
+          
+          setError(friendlyMessage);
         }
       } finally {
         setIsLoading(false);
