@@ -216,7 +216,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
     try {
       onBattleUpdate(battle.requestId, { status: 'revealing' });
 
-      const signer = await provider.getSigner();
+      const signer = await (provider as unknown as { getSigner: () => Promise<ethers.Signer> }).getSigner();
       const nftContract = new ethers.Contract(
         CONTRACT_ADDRESSES.NFT_DARK_FOREST,
         DarkForestNFTABI,

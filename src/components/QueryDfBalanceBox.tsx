@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
+import type { Eip1193Provider } from 'ethers';
 import { CONTRACT_ADDRESSES, DarkForestTokenABI, DarkForestNFTABI } from '@/config';
 import { initFhevm, getFhevmInstance } from '@/fhevm/fhe-client';
 import { useWalletContext } from '@/contexts/WalletContext';
@@ -59,8 +60,8 @@ export default function QueryDfBalanceBox() {
 
       const ethProvider = provider
         ? provider
-        : (typeof window !== 'undefined' && (window as unknown as { ethereum?: unknown }).ethereum
-            ? new ethers.BrowserProvider((window as unknown as { ethereum: unknown }).ethereum as any)
+        : (typeof window !== 'undefined' && (window as unknown as { ethereum?: Eip1193Provider }).ethereum
+            ? new ethers.BrowserProvider((window as unknown as { ethereum: Eip1193Provider }).ethereum as Eip1193Provider)
             : null);
       if (!ethProvider) {
         showNotification('Wallet not available', 'error');
@@ -156,8 +157,8 @@ export default function QueryDfBalanceBox() {
 
       const ethProvider = provider
         ? provider
-        : (typeof window !== 'undefined' && (window as unknown as { ethereum?: unknown }).ethereum
-            ? new ethers.BrowserProvider((window as unknown as { ethereum: unknown }).ethereum as any)
+        : (typeof window !== 'undefined' && (window as unknown as { ethereum?: Eip1193Provider }).ethereum
+            ? new ethers.BrowserProvider((window as unknown as { ethereum: Eip1193Provider }).ethereum as Eip1193Provider)
             : null);
       if (!ethProvider) {
         showNotification('Wallet not available', 'error');
@@ -197,8 +198,8 @@ export default function QueryDfBalanceBox() {
 
       const ethProvider = provider
         ? provider
-        : (typeof window !== 'undefined' && (window as unknown as { ethereum?: unknown }).ethereum
-            ? new ethers.BrowserProvider((window as unknown as { ethereum: unknown }).ethereum as any)
+        : (typeof window !== 'undefined' && (window as unknown as { ethereum?: Eip1193Provider }).ethereum
+            ? new ethers.BrowserProvider((window as unknown as { ethereum: Eip1193Provider }).ethereum as Eip1193Provider)
             : null);
       if (!ethProvider) {
         showNotification('Wallet not available', 'error');
