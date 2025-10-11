@@ -311,6 +311,10 @@ export default function MyNFTs() {
 
   const checkPendingBattle = async (nftContract: ethers.Contract, myNFTs: NFTData[]) => {
     try {
+      if (!CONTRACT_ADDRESSES.NFT_DARK_FOREST) {
+        console.warn('NFT contract address not configured');
+        return;
+      }
 
       const nowMs = Date.now();
       if (nowMs - lastCheckTsRef.current < 4000) return;
@@ -335,17 +339,17 @@ export default function MyNFTs() {
       } catch {}
 
       for (const nft of myNFTs) {
-        const requestId = await nftContract.getPendingBattleByToken(nft.tokenId);
-        
-        if (requestId && requestId > 0) {
-          const reqIdStr = requestId.toString();
+        try {
+          const requestId = await nftContract.getPendingBattleByToken(nft.tokenId);
           
-          // Skip if already completed in cache
-          if (completedRequestIds.has(reqIdStr)) {
-            continue;
-          }
+          if (requestId && requestId > 0) {
+            const reqIdStr = requestId.toString();
+            
+            if (completedRequestIds.has(reqIdStr)) {
+              continue;
+            }
 
-          const battleRequest = await nftContract.getBattleRequest(requestId);
+            const battleRequest = await nftContract.getBattleRequest(requestId);
           
           const isPending = battleRequest.isPending;
           const isRevealed = battleRequest.isRevealed;
@@ -410,6 +414,12 @@ export default function MyNFTs() {
               defenderCrit,
             });
             console.log(`Detected completed battle ${reqIdStr} from getPendingBattleByToken, result: ${result}`);
+          }
+          }
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          if (!errorMessage.includes('missing revert data') && !errorMessage.includes('CALL_EXCEPTION')) {
+            console.warn(`Failed to check battle for NFT #${nft.tokenId}:`, err);
           }
         }
       }
@@ -558,7 +568,12 @@ export default function MyNFTs() {
         }
       }
     } catch (error) {
-      console.error('Failed to check battles:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('missing revert data') || errorMessage.includes('CALL_EXCEPTION')) {
+        console.warn('Battle contract function may not be available or contract not deployed correctly');
+      } else {
+        console.error('Failed to check battles:', error);
+      }
     }
   };
 
