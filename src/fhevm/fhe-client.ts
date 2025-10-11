@@ -11,7 +11,7 @@ export async function initFhevm(network: unknown, chainId: number, gatewayUrl?: 
       gatewayUrl: gatewayUrl || (SepoliaConfig as Record<string, unknown>).gatewayUrl,
     };
 
-    fhevmInstance = await createInstance(config as Record<string, unknown>);
+    fhevmInstance = await createInstance(config as never);
 
     return fhevmInstance;
   } catch (error) {
