@@ -18,8 +18,45 @@ export function FheProvider({ children }: { children: ReactNode }) {
       if (typeof window === 'undefined') return;
 
       try {
-        const { initSDK } = await import('@zama-fhe/relayer-sdk/bundle');
-        await initSDK();
+        let initFn: (() => Promise<unknown>) | null = null;
+
+        const tryGetGlobal = () => {
+          const w = window as unknown as Record<string, unknown>;
+          const candidates = [
+            (w.RelayerSDK as { initSDK?: () => Promise<unknown> } | undefined)?.initSDK,
+            (w.relayerSDK as { initSDK?: () => Promise<unknown> } | undefined)?.initSDK,
+            (w.zamaRelayerSDK as { initSDK?: () => Promise<unknown> } | undefined)?.initSDK,
+          ];
+          return candidates.find((fn): fn is () => Promise<unknown> => typeof fn === 'function') ?? null;
+        };
+
+        initFn = tryGetGlobal();
+
+        if (!initFn) {
+          for (let i = 0; i < 50; i += 1) {
+            await new Promise((r) => setTimeout(r, 100));
+            initFn = tryGetGlobal();
+            if (initFn) break;
+          }
+        }
+
+        if (!initFn) {
+          try {
+            const mod = (await import('@zama-fhe/relayer-sdk/bundle')) as unknown;
+            const maybe = mod as { initSDK?: () => Promise<unknown> };
+            if (maybe && typeof maybe.initSDK === 'function') {
+              initFn = maybe.initSDK;
+            }
+          } catch {
+            // ignore and raise below
+          }
+        }
+
+        if (!initFn) {
+          throw new Error('Relayer SDK not loaded. Please check CDN availability or dependency installation.');
+        }
+
+        await initFn();
         setIsInitialized(true);
       } catch (err) {
         console.error('FHE SDK initialization failed:', err);
