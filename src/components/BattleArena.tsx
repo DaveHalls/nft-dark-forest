@@ -176,7 +176,6 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
             const result = attackerWins ? 'win' : 'loss';
             console.log(`Poll detected battle ${b.requestId} completed, result: ${result}`);
             onBattleUpdate(b.requestId, { status: 'completed', result, error: undefined });
-            setActiveTab(result === 'win' ? 'completed_win' : 'completed_loss');
             if (onBattleComplete) onBattleComplete();
           } else if (isRevealed && b.status !== 'revealing') {
             console.log(`Poll detected battle ${b.requestId} revealed but not completed`);
@@ -283,11 +282,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
           attackerCrit: Number(attackerCrit),
           defenderCrit: Number(defenderCrit),
         });
-
-        setActiveTab(result === 'win' ? 'completed_win' : 'completed_loss');
-        setTimeout(() => {
-          if (onBattleComplete) onBattleComplete();
-        }, 2000);
+        if (onBattleComplete) onBattleComplete();
       };
 
       // Add one-time event listener to avoid multiple triggers and memory leaks
@@ -332,7 +327,6 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
             const result = attackerWins ? 'win' : 'loss';
             console.log('Battle completed, result:', result);
             onBattleUpdate(battle.requestId, { status: 'completed', result, error: undefined });
-            setActiveTab(result === 'win' ? 'completed_win' : 'completed_loss');
             if (onBattleComplete) onBattleComplete();
             return;
           }

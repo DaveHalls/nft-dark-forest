@@ -428,7 +428,7 @@ export default function TrainingSection() {
           };
           return [newRecord, ...prev];
         });
-        setActiveTab('training');
+        // keep current tab; do not auto switch
       }
     };
 
@@ -453,7 +453,7 @@ export default function TrainingSection() {
         
         const wasUpdated = updated.some((r, i) => r !== prev[i]);
         if (wasUpdated) {
-          setActiveTab(success ? 'success' : 'failure');
+          // keep current tab; do not auto switch
           if (success) {
             showNotification(
               `Training successful! Check if ${ATTR_NAMES[attr]} attribute has improved`,
