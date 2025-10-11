@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
 import Image from 'next/image';
 import { useWalletContext } from '@/contexts/WalletContext';
@@ -45,6 +45,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
   const [countdowns, setCountdowns] = useState<Record<string, number>>({});
   const [externalNFTs, setExternalNFTs] = useState<Record<number, NFTInfo>>({});
   const [activeTab, setActiveTab] = useState<'ongoing' | 'completed_win' | 'completed_loss'>('ongoing');
+  const completedOnce = useRef<Set<string>>(new Set());
 
   const getNFTInfo = (tokenId: number): NFTInfo | undefined => {
     return nftList.find(nft => nft.tokenId === tokenId) || externalNFTs[tokenId];
@@ -174,9 +175,12 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
           if (!isPending) {
             const attackerWins = (req.attackerWins as boolean) === true;
             const result = attackerWins ? 'win' : 'loss';
-            console.log(`Poll detected battle ${b.requestId} completed, result: ${result}`);
-            onBattleUpdate(b.requestId, { status: 'completed', result, error: undefined });
-            if (onBattleComplete) onBattleComplete();
+            if (!completedOnce.current.has(b.requestId)) {
+              completedOnce.current.add(b.requestId);
+              console.log(`Poll detected battle ${b.requestId} completed, result: ${result}`);
+              onBattleUpdate(b.requestId, { status: 'completed', result, error: undefined });
+              if (onBattleComplete) onBattleComplete();
+            }
           } else if (isRevealed && b.status !== 'revealing') {
             console.log(`Poll detected battle ${b.requestId} revealed but not completed`);
             onBattleUpdate(b.requestId, { status: 'revealing' });
@@ -274,15 +278,18 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
           result
         });
 
-        onBattleUpdate(battle.requestId, {
-          status: 'completed',
-          result,
-          reasonCode: Number(reasonCode),
-          faster: Number(faster),
-          attackerCrit: Number(attackerCrit),
-          defenderCrit: Number(defenderCrit),
-        });
-        if (onBattleComplete) onBattleComplete();
+        if (!completedOnce.current.has(battle.requestId)) {
+          completedOnce.current.add(battle.requestId);
+          onBattleUpdate(battle.requestId, {
+            status: 'completed',
+            result,
+            reasonCode: Number(reasonCode),
+            faster: Number(faster),
+            attackerCrit: Number(attackerCrit),
+            defenderCrit: Number(defenderCrit),
+          });
+          if (onBattleComplete) onBattleComplete();
+        }
       };
 
       // Add one-time event listener to avoid multiple triggers and memory leaks
