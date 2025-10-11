@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
 import Image from 'next/image';
 import { useWalletContext } from '@/contexts/WalletContext';
@@ -63,6 +63,8 @@ export default function MyNFTs() {
   const [selectedNFT, setSelectedNFT] = useState<NFTData | null>(null);
   const [battleList, setBattleList] = useState<BattleInfo[]>([]);
   const [filter, setFilter] = useState<'all' | 'available' | 'unavailable'>('all');
+  const lastRecoveredCountRef = useRef(0);
+  const lastCheckTsRef = useRef(0);
   const [isInfoExpanded, setIsInfoExpanded] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('battleInfoExpanded');
@@ -304,6 +306,11 @@ export default function MyNFTs() {
 
   const checkPendingBattle = async (nftContract: ethers.Contract, myNFTs: NFTData[]) => {
     try {
+      // throttle to avoid frequent refresh jitter
+      const nowMs = Date.now();
+      if (nowMs - lastCheckTsRef.current < 4000) return;
+      lastCheckTsRef.current = nowMs;
+
       const battles: BattleInfo[] = [];
       const myTokenIds = myNFTs.map(nft => nft.tokenId);
 
@@ -421,7 +428,18 @@ export default function MyNFTs() {
         }
       }
 
-      const allBattles = [...cachedBattles, ...battles];
+      // merge and dedupe by requestId; prefer completed > revealing > waiting
+      const merged = [...cachedBattles, ...battles];
+      const byId = new Map<string, BattleInfo>();
+      const rank = (s: BattleInfo['status']) => (s === 'completed' ? 3 : s === 'revealing' ? 2 : 1);
+      for (const b of merged) {
+        const key = b.requestId || `${b.attackerTokenId}-${b.defenderTokenId}-${b.revealTime}`;
+        const prev = byId.get(key);
+        if (!prev || rank(b.status) > rank(prev.status)) {
+          byId.set(key, b);
+        }
+      }
+      const allBattles = Array.from(byId.values());
       
       try {
         localStorage.setItem(battleCacheKey, JSON.stringify(allBattles));
@@ -430,7 +448,10 @@ export default function MyNFTs() {
       
       if (allBattles.length > 0) {
         setBattleList(allBattles);
-        console.log(`Recovered ${allBattles.length} battles total (ongoing + completed)`);
+        if (allBattles.length !== lastRecoveredCountRef.current) {
+          lastRecoveredCountRef.current = allBattles.length;
+          console.log(`Recovered ${allBattles.length} battles total (ongoing + completed)`);
+        }
       }
     } catch (error) {
       console.error('Failed to check battles:', error);
