@@ -364,6 +364,19 @@ export default function MyNFTs() {
               status,
               revealTime,
             });
+          } else {
+            // Battle completed on-chain but event not received yet
+            const attackerWins = Boolean(battleRequest.attackerWins);
+            const result = attackerWins ? 'win' : 'loss';
+            battles.push({
+              requestId: reqIdStr,
+              attackerTokenId: attackerId,
+              defenderTokenId: defenderId,
+              status: 'completed',
+              revealTime: 0,
+              result,
+            });
+            console.log(`Detected completed battle ${reqIdStr} from getPendingBattleByToken, result: ${result}`);
           }
         }
       }
