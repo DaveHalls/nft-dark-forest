@@ -415,12 +415,24 @@ export default function TrainingSection() {
       const comp = Number(completeAt);
       const now = Math.floor(Date.now() / 1000);
       
-      setOwned(prev => prev.map(n => n.tokenId === t ? {
-        ...n,
-        isUpgrading: true,
-        upgradeCompleteAt: comp,
-        upgradeRemaining: Math.max(0, comp - now),
-      } : n));
+      setOwned(prev => {
+        const updated = prev.map(n => n.tokenId === t ? {
+          ...n,
+          isUpgrading: true,
+          upgradeCompleteAt: comp,
+          upgradeRemaining: Math.max(0, comp - now),
+        } : n);
+
+        // Sync to localStorage cache immediately
+        try {
+          const cacheKey = `ownedNFTsCache_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
+          localStorage.setItem(cacheKey, JSON.stringify(updated));
+        } catch (err) {
+          console.warn('Failed to update owned NFTs cache:', err);
+        }
+
+        return updated;
+      });
 
       const nftInfo = owned.find(n => n.tokenId === t);
       if (nftInfo) {
@@ -440,7 +452,6 @@ export default function TrainingSection() {
           };
           return [newRecord, ...prev];
         });
-        // keep current tab; do not auto switch
       }
     };
 
@@ -448,12 +459,24 @@ export default function TrainingSection() {
       const t = Number(tokenId);
       const attr = Number(attrIndex);
       
-      setOwned(prev => prev.map(n => n.tokenId === t ? {
-        ...n,
-        isUpgrading: false,
-        upgradeRemaining: 0,
-        upgradeCompleteAt: null,
-      } : n));
+      setOwned(prev => {
+        const updated = prev.map(n => n.tokenId === t ? {
+          ...n,
+          isUpgrading: false,
+          upgradeRemaining: 0,
+          upgradeCompleteAt: null,
+        } : n);
+
+        // Sync to localStorage cache immediately
+        try {
+          const cacheKey = `ownedNFTsCache_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
+          localStorage.setItem(cacheKey, JSON.stringify(updated));
+        } catch (err) {
+          console.warn('Failed to update owned NFTs cache:', err);
+        }
+
+        return updated;
+      });
 
       setTrainingRecords(prev => {
         const newStatus: 'success' | 'failure' = success ? 'success' : 'failure';
@@ -465,7 +488,6 @@ export default function TrainingSection() {
         
         const wasUpdated = updated.some((r, i) => r !== prev[i]);
         if (wasUpdated) {
-          // keep current tab; do not auto switch
           if (success) {
             showNotification(
               `Training successful! Check if ${ATTR_NAMES[attr]} attribute has improved`,
@@ -513,12 +535,24 @@ export default function TrainingSection() {
       const st = await nft.getUpgradeState(id);
       const inProgress = Boolean(st.inProgress ?? st[0]);
       if (!inProgress) {
-        setOwned(prev => prev.map(n => n.tokenId === id ? {
-          ...n,
-          isUpgrading: false,
-          upgradeRemaining: 0,
-          upgradeCompleteAt: null,
-        } : n));
+        setOwned(prev => {
+          const updated = prev.map(n => n.tokenId === id ? {
+            ...n,
+            isUpgrading: false,
+            upgradeRemaining: 0,
+            upgradeCompleteAt: null,
+          } : n);
+
+          // Sync to localStorage cache immediately
+          try {
+            const cacheKey = `ownedNFTsCache_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
+            localStorage.setItem(cacheKey, JSON.stringify(updated));
+          } catch (err) {
+            console.warn('Failed to update owned NFTs cache:', err);
+          }
+
+          return updated;
+        });
       }
     } catch {}
   };
@@ -573,6 +607,20 @@ export default function TrainingSection() {
     }
     try {
       setFinishingTokens(prev => new Set(prev).add(tokenId));
+      
+
+      const nftRead = new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, provider!);
+      const st = await nftRead.getUpgradeState(tokenId);
+      const completeAt = Number(st.completeAt ?? st[1]);
+      const currentBlock = await provider!.getBlock('latest');
+      const blockTimestamp = currentBlock!.timestamp;
+      
+      if (blockTimestamp < completeAt) {
+        const remaining = completeAt - blockTimestamp;
+        showNotification(`Training not ready yet, please wait ${remaining} seconds`, 'info');
+        return;
+      }
+      
       const nft = await getContract();
       const tx = await nft.finishUpgrade(BigInt(tokenId));
       showNotification('Complete training transaction submitted', 'info');
@@ -584,10 +632,17 @@ export default function TrainingSection() {
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      
       if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
-        showNotification('Complete training cancelled', 'info');
+        showNotification('Training completion cancelled', 'info');
+      } else if (msg.includes('Not ready')) {
+        showNotification('Training not yet complete, please wait a few more seconds and try again', 'info');
+      } else if (msg.includes('No upgrade') || msg.includes('not in progress')) {
+        showNotification('This hero is not currently training', 'info');
+      } else if (msg.includes('Not owner')) {
+        showNotification('You are not the owner of this hero', 'error');
       } else {
-        showNotification(`Failed to complete training: ${msg}`, 'error');
+        showNotification('Failed to complete training, please try again later', 'error');
       }
     } finally {
       setFinishingTokens(prev => {
