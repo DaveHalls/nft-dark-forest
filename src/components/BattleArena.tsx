@@ -162,7 +162,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
     const nftContract = new ethers.Contract(
       CONTRACT_ADDRESSES.NFT_DARK_FOREST,
       DarkForestNFTABI,
-      provider
+      provider as unknown as ethers.ContractRunner
     );
 
     const tick = async () => {
