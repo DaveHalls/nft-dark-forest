@@ -77,7 +77,7 @@ export default function MarketSection() {
           ][classId];
           let wins = 0, losses = 0, winRate = 0;
           try {
-            const stats = await (read as any).getBattleStats?.(id);
+            const stats = await (read as unknown as { getBattleStats?: (id: number) => Promise<unknown> }).getBattleStats?.(id);
             if (stats) {
               wins = Number(stats[0] ?? stats.wins ?? 0);
               losses = Number(stats[1] ?? stats.losses ?? 0);
@@ -87,7 +87,7 @@ export default function MarketSection() {
             }
           } catch {
             try {
-              const rec = await (read as any).getBattleRecord?.(id);
+              const rec = await (read as unknown as { getBattleRecord?: (id: number) => Promise<unknown> }).getBattleRecord?.(id);
               if (rec) {
                 wins = Number(rec[0] ?? rec.wins ?? 0);
                 losses = Number(rec[1] ?? rec.losses ?? 0);
@@ -152,7 +152,7 @@ export default function MarketSection() {
           ][classId];
           let wins = 0, losses = 0, winRate = 0;
           try {
-            const stats = await (read as any).getBattleStats?.(id);
+            const stats = await (read as unknown as { getBattleStats?: (id: number) => Promise<unknown> }).getBattleStats?.(id);
             if (stats) {
               wins = Number(stats[0] ?? stats.wins ?? 0);
               losses = Number(stats[1] ?? stats.losses ?? 0);
@@ -162,7 +162,7 @@ export default function MarketSection() {
             }
           } catch {
             try {
-              const rec = await (read as any).getBattleRecord?.(id);
+              const rec = await (read as unknown as { getBattleRecord?: (id: number) => Promise<unknown> }).getBattleRecord?.(id);
               if (rec) {
                 wins = Number(rec[0] ?? rec.wins ?? 0);
                 losses = Number(rec[1] ?? rec.losses ?? 0);

@@ -518,7 +518,7 @@ export default function MyNFTs() {
         }
       }
       
-      let allBattles = Array.from(byId.values());
+      const allBattles = Array.from(byId.values());
       
       for (const battle of allBattles) {
         if (battle.status === 'completed' && battle.reasonCode === undefined) {
