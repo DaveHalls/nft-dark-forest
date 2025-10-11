@@ -120,7 +120,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
       return accounts[0];
     } catch (error) {
-      console.error('Failed to connect wallet:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (!errorMessage.includes('user rejected') && !errorMessage.includes('User denied') && !errorMessage.includes('ACTION_REJECTED')) {
+        console.error('Failed to connect wallet:', error);
+      }
       throw error;
     }
   }, [switchChain]);
@@ -181,7 +184,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             await connectWallet(wallet);
           }
         } catch (error) {
-          console.error('Auto-reconnect failed:', error);
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          if (errorMessage.includes('user rejected') || errorMessage.includes('User denied') || errorMessage.includes('ACTION_REJECTED')) {
+            localStorage.removeItem('wallet_connected');
+            localStorage.removeItem('wallet_rdns');
+          }
         }
       }
     };
