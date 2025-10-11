@@ -38,9 +38,10 @@ interface BattleArenaProps {
   onBattleRemove?: (requestId: string) => void;
   onBattleComplete?: () => void;
   onClearCache?: () => void;
+  isLoading?: boolean;
 }
 
-export default function BattleArena({ battleList, nftList, onBattleUpdate, onBattleRemove, onBattleComplete, onClearCache }: BattleArenaProps) {
+export default function BattleArena({ battleList, nftList, onBattleUpdate, onBattleRemove, onBattleComplete, onClearCache, isLoading }: BattleArenaProps) {
   const { provider } = useWalletContext();
   const [countdowns, setCountdowns] = useState<Record<string, number>>({});
   const [externalNFTs, setExternalNFTs] = useState<Record<number, NFTInfo>>({});
@@ -581,32 +582,56 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
       <div className="flex gap-2 mb-3">
         <button
           onClick={() => setActiveTab('ongoing')}
-          className={`flex-1 py-2 px-3 rounded text-sm font-medium transition-colors ${
+          className={`flex-1 py-2 px-3 rounded text-sm font-medium transition-colors relative ${
             activeTab === 'ongoing'
               ? 'bg-blue-600 text-white'
               : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
           }`}
         >
+          {isLoading && activeTab === 'ongoing' && (
+            <span className="absolute left-2 top-1/2 -translate-y-1/2">
+              <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            </span>
+          )}
           Ongoing {ongoingBattles.length > 0 && `(${ongoingBattles.length})`}
         </button>
         <button
           onClick={() => setActiveTab('completed_win')}
-          className={`flex-1 py-2 px-3 rounded text-sm font-medium transition-colors ${
+          className={`flex-1 py-2 px-3 rounded text-sm font-medium transition-colors relative ${
             activeTab === 'completed_win'
               ? 'bg-blue-600 text-white'
               : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
           }`}
         >
+          {isLoading && activeTab === 'completed_win' && (
+            <span className="absolute left-2 top-1/2 -translate-y-1/2">
+              <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            </span>
+          )}
           Victory {completedWin.length > 0 && `(${completedWin.length})`}
         </button>
         <button
           onClick={() => setActiveTab('completed_loss')}
-          className={`flex-1 py-2 px-3 rounded text-sm font-medium transition-colors ${
+          className={`flex-1 py-2 px-3 rounded text-sm font-medium transition-colors relative ${
             activeTab === 'completed_loss'
               ? 'bg-blue-600 text-white'
               : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
           }`}
         >
+          {isLoading && activeTab === 'completed_loss' && (
+            <span className="absolute left-2 top-1/2 -translate-y-1/2">
+              <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            </span>
+          )}
           Defeat {completedLoss.length > 0 && `(${completedLoss.length})`}
         </button>
       </div>

@@ -747,6 +747,7 @@ export default function MyNFTs() {
               wins: nft.wins,
               losses: nft.losses,
             }))}
+            isLoading={isLoading}
             onBattleUpdate={(requestId, updates) => {
               setBattleList(prev => {
                 const updated = prev.map(b => 
