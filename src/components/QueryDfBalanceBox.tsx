@@ -8,7 +8,7 @@ import { useWalletContext } from '@/contexts/WalletContext';
 import { useNotificationContext } from '@/contexts/NotificationContext';
 
 export default function QueryDfBalanceBox() {
-  const { isConnected } = useWalletContext();
+  const { isConnected, provider } = useWalletContext();
   const { showNotification } = useNotificationContext();
   const [isLoading, setIsLoading] = useState(false);
   const [isMinting, setIsMinting] = useState(false);
@@ -57,12 +57,24 @@ export default function QueryDfBalanceBox() {
 
       setIsLoading(true);
 
-      const provider = new ethers.BrowserProvider((window as any).ethereum);
-      const network = await provider.getNetwork();
-      const signer = await provider.getSigner();
+      const ethProvider = provider
+        ? provider
+        : (typeof window !== 'undefined' && (window as any).ethereum
+            ? new ethers.BrowserProvider((window as any).ethereum)
+            : null);
+      if (!ethProvider) {
+        showNotification('Wallet not available', 'error');
+        return;
+      }
+      const network = await ethProvider.getNetwork();
+      const signer = await ethProvider.getSigner();
       const userAddress = await signer.getAddress();
 
-      await initFhevm(window.ethereum, Number(network.chainId), CONTRACT_ADDRESSES.GATEWAY);
+      const ethereum = (provider as any)?.provider ?? (typeof window !== 'undefined' ? (window as any).ethereum : undefined);
+      const hasEip1193 = !!ethereum && typeof ethereum.request === 'function';
+      const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL;
+      const networkArg: any = hasEip1193 ? ethereum : rpcUrl;
+      await initFhevm(networkArg, Number(network.chainId), CONTRACT_ADDRESSES.GATEWAY);
       const instance = getFhevmInstance();
 
       const token = new ethers.Contract(CONTRACT_ADDRESSES.FHE_TOKEN, DarkForestTokenABI, signer);
@@ -142,8 +154,16 @@ export default function QueryDfBalanceBox() {
 
       setIsRefreshingReward(true);
 
-      const provider = new ethers.BrowserProvider((window as any).ethereum);
-      const signer = await provider.getSigner();
+      const ethProvider = provider
+        ? provider
+        : (typeof window !== 'undefined' && (window as any).ethereum
+            ? new ethers.BrowserProvider((window as any).ethereum)
+            : null);
+      if (!ethProvider) {
+        showNotification('Wallet not available', 'error');
+        return;
+      }
+      const signer = await ethProvider.getSigner();
       const userAddress = await signer.getAddress();
       const nft = new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, signer);
 
@@ -175,8 +195,16 @@ export default function QueryDfBalanceBox() {
 
       setIsMinting(true);
 
-      const provider = new ethers.BrowserProvider((window as any).ethereum);
-      const signer = await provider.getSigner();
+      const ethProvider = provider
+        ? provider
+        : (typeof window !== 'undefined' && (window as any).ethereum
+            ? new ethers.BrowserProvider((window as any).ethereum)
+            : null);
+      if (!ethProvider) {
+        showNotification('Wallet not available', 'error');
+        return;
+      }
+      const signer = await ethProvider.getSigner();
       const nft = new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, signer);
 
       const tx = await nft.claimRewards();
