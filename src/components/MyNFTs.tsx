@@ -306,7 +306,7 @@ export default function MyNFTs() {
 
   const checkPendingBattle = async (nftContract: ethers.Contract, myNFTs: NFTData[]) => {
     try {
-      // throttle to avoid frequent refresh jitter
+
       const nowMs = Date.now();
       if (nowMs - lastCheckTsRef.current < 4000) return;
       lastCheckTsRef.current = nowMs;
@@ -314,10 +314,32 @@ export default function MyNFTs() {
       const battles: BattleInfo[] = [];
       const myTokenIds = myNFTs.map(nft => nft.tokenId);
 
+  
+      const battleCacheKey = `battleHistory_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
+      const completedRequestIds = new Set<string>();
+      try {
+        const cachedData = localStorage.getItem(battleCacheKey);
+        if (cachedData) {
+          const parsed = JSON.parse(cachedData) as BattleInfo[];
+          parsed.forEach(b => {
+            if (b.status === 'completed' && b.requestId) {
+              completedRequestIds.add(b.requestId);
+            }
+          });
+        }
+      } catch {}
+
       for (const nft of myNFTs) {
         const requestId = await nftContract.getPendingBattleByToken(nft.tokenId);
         
         if (requestId && requestId > 0) {
+          const reqIdStr = requestId.toString();
+          
+          // Skip if already completed in cache
+          if (completedRequestIds.has(reqIdStr)) {
+            continue;
+          }
+
           const battleRequest = await nftContract.getBattleRequest(requestId);
           
           const isPending = battleRequest.isPending;
@@ -333,11 +355,10 @@ export default function MyNFTs() {
               status = 'waiting';
             } else {
               status = 'revealing';
-              console.log(`⚠️ Battle #${requestId.toString()} revealed but still waiting for Gateway callback`);
             }
 
             battles.push({
-              requestId: requestId.toString(),
+              requestId: reqIdStr,
               attackerTokenId: attackerId,
               defenderTokenId: defenderId,
               status,

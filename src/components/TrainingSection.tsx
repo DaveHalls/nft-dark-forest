@@ -269,7 +269,8 @@ export default function TrainingSection() {
           const parsed = JSON.parse(cachedData);
           cachedStartedEvents = parsed.started || [];
           cachedFinishedEvents = parsed.finished || [];
-          fromBlock = parseInt(lastBlock) + 1;
+
+          fromBlock = Math.max(parseInt(lastBlock) - 1, 0);
         }
       } catch {}
       
@@ -336,6 +337,12 @@ export default function TrainingSection() {
         } catch {}
       }
       
+      // dedupe by tokenId-attrIndex with most recent blockNumber
+      const startedKey = (e: TrainingEvent) => `${e.tokenId}-${e.attrIndex}-${e.blockNumber}`;
+      const finishKey = (e: TrainingEvent) => `${e.tokenId}-${e.attrIndex}-${e.blockNumber}`;
+      const startedSet = new Set(startedEvents.map(startedKey));
+      const finishedSet = new Set(finishedEvents.map(finishKey));
+
       const records: TrainingRecord[] = [];
       
       for (const started of startedEvents) {
@@ -386,7 +393,12 @@ export default function TrainingSection() {
           started: startedEvents,
           finished: finishedEvents
         }));
-        localStorage.setItem(lastBlockKey, currentBlock.toString());
+        const maxBlock = Math.max(
+          ...startedEvents.map(e => e.blockNumber),
+          ...finishedEvents.map(e => e.blockNumber),
+          0
+        );
+        localStorage.setItem(lastBlockKey, String(maxBlock || currentBlock));
       } catch {}
     } catch (e) {
       console.error('Failed to load training history:', e);
