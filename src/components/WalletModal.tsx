@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import { useWalletContext } from '@/contexts/WalletContext';
 import { useState } from 'react';
+import type { EIP6963ProviderDetail } from '@/types/wallet';
 
 interface WalletModalProps {
   isOpen: boolean;
@@ -16,7 +17,7 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
 
   if (!isOpen) return null;
 
-  const handleConnect = async (wallet: { info: { uuid: string; name: string; icon: string; rdns: string }; provider: unknown }) => {
+  const handleConnect = async (wallet: EIP6963ProviderDetail) => {
     try {
       setIsConnecting(true);
       setError(null);
