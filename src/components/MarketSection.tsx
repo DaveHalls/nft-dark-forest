@@ -77,11 +77,25 @@ export default function MarketSection() {
           ][classId];
           let wins = 0, losses = 0, winRate = 0;
           try {
-            const stats = await read.getDetailedBattleStats(id);
-            wins = Number(stats[0]);
-            losses = Number(stats[1]);
-            winRate = Number(stats[3]);
-          } catch {}
+            const stats = await (read as any).getBattleStats?.(id);
+            if (stats) {
+              wins = Number(stats[0] ?? stats.wins ?? 0);
+              losses = Number(stats[1] ?? stats.losses ?? 0);
+              winRate = Number(stats[3] ?? stats.winRate ?? 0);
+            } else {
+              throw new Error('getBattleStats unavailable');
+            }
+          } catch {
+            try {
+              const rec = await (read as any).getBattleRecord?.(id);
+              if (rec) {
+                wins = Number(rec[0] ?? rec.wins ?? 0);
+                losses = Number(rec[1] ?? rec.losses ?? 0);
+                const total = wins + losses;
+                winRate = total > 0 ? Math.floor((wins * 10000) / total) : 0;
+              }
+            } catch {}
+          }
           list.push({ tokenId: id, price, seller, name, imageUrl: ipfsToHttp(`ipfs://${imageCid}`), wins, losses, winRate });
         } catch {}
       }
@@ -138,11 +152,25 @@ export default function MarketSection() {
           ][classId];
           let wins = 0, losses = 0, winRate = 0;
           try {
-            const stats = await read.getDetailedBattleStats(id);
-            wins = Number(stats[0]);
-            losses = Number(stats[1]);
-            winRate = Number(stats[3]);
-          } catch {}
+            const stats = await (read as any).getBattleStats?.(id);
+            if (stats) {
+              wins = Number(stats[0] ?? stats.wins ?? 0);
+              losses = Number(stats[1] ?? stats.losses ?? 0);
+              winRate = Number(stats[3] ?? stats.winRate ?? 0);
+            } else {
+              throw new Error('getBattleStats unavailable');
+            }
+          } catch {
+            try {
+              const rec = await (read as any).getBattleRecord?.(id);
+              if (rec) {
+                wins = Number(rec[0] ?? rec.wins ?? 0);
+                losses = Number(rec[1] ?? rec.losses ?? 0);
+                const total = wins + losses;
+                winRate = total > 0 ? Math.floor((wins * 10000) / total) : 0;
+              }
+            } catch {}
+          }
           list.push({ tokenId: id, name, imageUrl: ipfsToHttp(`ipfs://${imageCid}`), wins, losses, winRate });
         } catch {}
       }
