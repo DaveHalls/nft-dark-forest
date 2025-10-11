@@ -150,7 +150,12 @@ export default function TrainingSection() {
             losses,
           } as OwnedNFT;
         } catch (error) {
-          console.error(`Failed to load NFT #${id}:`, error);
+          const msg = error instanceof Error ? error.message : String(error);
+          if (msg.includes('missing revert data') || msg.includes('invalid token') || msg.includes('nonexistent token')) {
+            console.log(`NFT #${id} does not exist, skipping`);
+          } else {
+            console.error(`Failed to load NFT #${id}:`, error);
+          }
           return null;
         }
       });

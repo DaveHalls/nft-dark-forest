@@ -213,7 +213,12 @@ export default function MyNFTs() {
             upgradeRemaining: upgradeRemaining as number,
           } as NFTData;
         } catch (error) {
-          console.error(`Failed to load NFT #${tokenId}:`, error);
+          const msg = error instanceof Error ? error.message : String(error);
+          if (msg.includes('missing revert data') || msg.includes('invalid token') || msg.includes('nonexistent token')) {
+            console.log(`NFT #${tokenId} does not exist, skipping`);
+          } else {
+            console.error(`Failed to load NFT #${tokenId}:`, error);
+          }
           return null;
         }
       });
