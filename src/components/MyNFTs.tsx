@@ -9,6 +9,7 @@ import { useNotificationContext } from '@/contexts/NotificationContext';
 import BattleArena, { BattleInfo } from './BattleArena';
 import NFTDetailModal from './NFTDetailModal';
 import { ipfsToHttp } from '@/config/ipfs';
+import { isNetworkSwitchError } from '@/utils/errorHandler';
 
 const HERO_CLASSES = [
   {
@@ -307,6 +308,9 @@ export default function MyNFTs() {
       }
 
     } catch (error) {
+      if (isNetworkSwitchError(error)) {
+        return;
+      }
       console.error('Failed to load NFTs:', error);
       const message = error instanceof Error ? error.message : 'Loading failed';
       showNotification(message, 'error');

@@ -69,6 +69,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       await providerWithSend.send('wallet_switchEthereumChain', [
         { chainId: DEFAULT_CHAIN.chainId },
       ]);
+      
+      if (typeof window !== 'undefined' && window.ethereum) {
+        const newProvider = new BrowserProvider(window.ethereum);
+        const network = await newProvider.getNetwork();
+        const chainId = `0x${network.chainId.toString(16)}`;
+        setWalletState(prev => ({ ...prev, chainId, provider: newProvider }));
+      }
     } catch (error: unknown) {
       if (error && typeof error === 'object' && 'code' in error && error.code === 4902) {
         await providerWithSend.send('wallet_addEthereumChain', [
@@ -80,6 +87,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             blockExplorerUrls: DEFAULT_CHAIN.blockExplorerUrls,
           },
         ]);
+        
+        if (typeof window !== 'undefined' && window.ethereum) {
+          const newProvider = new BrowserProvider(window.ethereum);
+          const network = await newProvider.getNetwork();
+          const chainId = `0x${network.chainId.toString(16)}`;
+          setWalletState(prev => ({ ...prev, chainId, provider: newProvider }));
+        }
       } else {
         throw error;
       }

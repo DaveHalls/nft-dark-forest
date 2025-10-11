@@ -8,6 +8,7 @@ import { useWalletContext } from '@/contexts/WalletContext';
 import { useNotificationContext } from '@/contexts/NotificationContext';
 import { ipfsToHttp } from '@/config/ipfs';
 import NFTDetailModal from './NFTDetailModal';
+import { isNetworkSwitchError } from '@/utils/errorHandler';
 
 interface OwnedNFT {
   tokenId: number;
@@ -249,6 +250,9 @@ export default function TrainingSection() {
       
       return list;
     } catch (e) {
+      if (isNetworkSwitchError(e)) {
+        return;
+      }
       const msg = e instanceof Error ? e.message : String(e);
       showNotification(`Failed to load NFT: ${msg}`, 'error');
     } finally {

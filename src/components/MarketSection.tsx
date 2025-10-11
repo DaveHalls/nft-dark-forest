@@ -7,6 +7,7 @@ import { CONTRACT_ADDRESSES, DarkForestNFTABI, DarkForestMarketABI } from '@/con
 import { useWalletContext } from '@/contexts/WalletContext';
 import { useNotificationContext } from '@/contexts/NotificationContext';
 import { ipfsToHttp } from '@/config/ipfs';
+import { isNetworkSwitchError } from '@/utils/errorHandler';
 
 interface ListingItem {
   tokenId: number;
@@ -103,6 +104,9 @@ export default function MarketSection() {
       }
       setItems(list);
     } catch (e: unknown) {
+      if (isNetworkSwitchError(e)) {
+        return;
+      }
       const msg = e instanceof Error ? e.message : String(e);
       showNotification(`Failed to load market: ${msg}`, 'error');
     } finally {
@@ -180,6 +184,9 @@ export default function MarketSection() {
       }
       setMyItems(list);
     } catch (e: unknown) {
+      if (isNetworkSwitchError(e)) {
+        return;
+      }
       const msg = e instanceof Error ? e.message : String(e);
       showNotification(`Failed to load my NFTs: ${msg}`, 'error');
     } finally {
