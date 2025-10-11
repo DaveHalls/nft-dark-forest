@@ -28,40 +28,6 @@ export function useWallet() {
     window.dispatchEvent(new Event('eip6963:requestProvider'));
   }, []);
 
-  const connectWallet = useCallback(async (providerDetail?: EIP6963ProviderDetail) => {
-    try {
-      let provider;
-      
-      if (providerDetail) {
-        provider = new BrowserProvider(providerDetail.provider);
-      } else if (typeof window !== 'undefined' && window.ethereum) {
-        provider = new BrowserProvider(window.ethereum);
-      } else {
-        throw new Error('No wallet detected');
-      }
-
-      const accounts = await provider.send('eth_requestAccounts', []);
-      const network = await provider.getNetwork();
-      
-      const chainId = `0x${network.chainId.toString(16)}`;
-      if (chainId !== DEFAULT_CHAIN.chainId) {
-        await switchChain();
-      }
-
-      setWalletState({
-        address: accounts[0],
-        chainId,
-        isConnected: true,
-        provider,
-      });
-
-      return accounts[0];
-    } catch (error) {
-      console.error('Failed to connect wallet:', error);
-      throw error;
-    }
-  }, [switchChain]);
-
   const disconnectWallet = useCallback(() => {
     setWalletState({
       address: null,
@@ -95,6 +61,40 @@ export function useWallet() {
       }
     }
   }, [walletState.provider]);
+
+  const connectWallet = useCallback(async (providerDetail?: EIP6963ProviderDetail) => {
+    try {
+      let provider;
+      
+      if (providerDetail) {
+        provider = new BrowserProvider(providerDetail.provider);
+      } else if (typeof window !== 'undefined' && window.ethereum) {
+        provider = new BrowserProvider(window.ethereum);
+      } else {
+        throw new Error('No wallet detected');
+      }
+
+      const accounts = await provider.send('eth_requestAccounts', []);
+      const network = await provider.getNetwork();
+      
+      const chainId = `0x${network.chainId.toString(16)}`;
+      if (chainId !== DEFAULT_CHAIN.chainId) {
+        await switchChain();
+      }
+
+      setWalletState({
+        address: accounts[0],
+        chainId,
+        isConnected: true,
+        provider,
+      });
+
+      return accounts[0];
+    } catch (error) {
+      console.error('Failed to connect wallet:', error);
+      throw error;
+    }
+  }, [switchChain]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.ethereum) return;
