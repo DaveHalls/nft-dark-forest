@@ -146,7 +146,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, [switchChain]);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.ethereum) return;
+    const eth = (walletState.provider as unknown as { provider?: unknown })?.provider || (typeof window !== 'undefined' ? (window as unknown as { ethereum?: unknown }).ethereum : undefined);
+    if (!eth || typeof eth !== 'object') return;
+
+    const anyEth = eth as { on?: (...args: unknown[]) => void; removeListener?: (...args: unknown[]) => void };
 
     const handleAccountsChanged = (accounts: string[]) => {
       if (accounts.length === 0) {
@@ -156,12 +159,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    const handleChainChanged = async (chainId: string) => {
-      if (window.ethereum) {
-        const newProvider = new BrowserProvider(window.ethereum);
-        setWalletState(prev => ({ ...prev, chainId, provider: newProvider }));
+    const handleChainChanged = async (newChainId: string) => {
+      const hasWindowEth = typeof window !== 'undefined' && (window as unknown as { ethereum?: unknown }).ethereum;
+      if (hasWindowEth) {
+        const newProvider = new BrowserProvider((window as unknown as { ethereum: unknown }).ethereum as never);
+        setWalletState(prev => ({ ...prev, chainId: newChainId, provider: newProvider }));
       } else {
-        setWalletState(prev => ({ ...prev, chainId }));
+        setWalletState(prev => ({ ...prev, chainId: newChainId }));
       }
     };
 
@@ -169,18 +173,16 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       disconnectWallet();
     };
 
-    window.ethereum.on('accountsChanged', handleAccountsChanged as (...args: unknown[]) => void);
-    window.ethereum.on('chainChanged', handleChainChanged as (...args: unknown[]) => void);
-    window.ethereum.on('disconnect', handleDisconnect as (...args: unknown[]) => void);
+    (anyEth.on as unknown as (event: string, listener: (...args: unknown[]) => void) => void)?.('accountsChanged', handleAccountsChanged as (...args: unknown[]) => void);
+    (anyEth.on as unknown as (event: string, listener: (...args: unknown[]) => void) => void)?.('chainChanged', handleChainChanged as (...args: unknown[]) => void);
+    (anyEth.on as unknown as (event: string, listener: (...args: unknown[]) => void) => void)?.('disconnect', handleDisconnect as (...args: unknown[]) => void);
 
     return () => {
-      if (window.ethereum?.removeListener) {
-        window.ethereum.removeListener('accountsChanged', handleAccountsChanged as (...args: unknown[]) => void);
-        window.ethereum.removeListener('chainChanged', handleChainChanged as (...args: unknown[]) => void);
-        window.ethereum.removeListener('disconnect', handleDisconnect as (...args: unknown[]) => void);
-      }
+      anyEth.removeListener?.('accountsChanged', handleAccountsChanged as (...args: unknown[]) => void);
+      anyEth.removeListener?.('chainChanged', handleChainChanged as (...args: unknown[]) => void);
+      anyEth.removeListener?.('disconnect', handleDisconnect as (...args: unknown[]) => void);
     };
-  }, [disconnectWallet, switchChain]);
+  }, [walletState.provider, disconnectWallet]);
 
   useEffect(() => {
     const reconnect = async () => {
