@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ethers } from 'ethers';
 import { useWalletContext } from '@/contexts/WalletContext';
 import { CONTRACT_ADDRESSES, DarkForestNFTABI } from '@/config';
@@ -47,6 +47,28 @@ export default function MintSection() {
   const [isMinting, setIsMinting] = useState(false);
   const [mintedTokenId, setMintedTokenId] = useState<number | null>(null);
   const [mintedClassId, setMintedClassId] = useState<number | null>(null);
+  const [totalMinted, setTotalMinted] = useState<number>(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadTotal = async () => {
+      try {
+        const readProvider = provider ?? new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC_URL);
+        if (!readProvider) return;
+        const nftRead = new ethers.Contract(
+          CONTRACT_ADDRESSES.NFT_DARK_FOREST,
+          DarkForestNFTABI,
+          readProvider
+        );
+        const res: bigint = await nftRead.totalSupply();
+        if (!cancelled) setTotalMinted(Number(res));
+      } catch {
+        // ignore read errors; UI will show 0 until refresh
+      }
+    };
+    loadTotal();
+    return () => { cancelled = true; };
+  }, [provider]);
 
   const handleMint = async () => {
     if (!isConnected || !provider || !address) {
@@ -101,8 +123,12 @@ export default function MintSection() {
         }).catch((err: Error) => {
           console.error('Failed to query class:', err);
         });
+
+        // optimistic UI: increase total by 1; true value will refresh on next page load
+        setTotalMinted((prev) => prev + 1);
       } else {
         showNotification('NFT minted successfully!', 'success');
+        setTotalMinted((prev) => prev + 1);
       }
 
     } catch (err: unknown) {
@@ -189,6 +215,11 @@ export default function MintSection() {
       </div>
 
       <div className="mb-8">
+        <p className="text-center mb-4 text-gray-400">
+          Currently there are{' '}
+          <span className="text-red-400 text-xl font-semibold align-baseline">{totalMinted}</span>{' '}
+          heroes roaming in the Dark Forest
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
           {HERO_CLASSES.map((hero) => (
             <HeroCard
