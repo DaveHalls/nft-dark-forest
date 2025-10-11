@@ -428,7 +428,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
                 <button
                   onClick={async () => {
                     try {
-                      const signer = await provider?.getSigner();
+                      const signer = await (provider as unknown as { getSigner: () => Promise<ethers.Signer> })?.getSigner();
                       if (!signer) return;
                       const nftContract = new ethers.Contract(
                         CONTRACT_ADDRESSES.NFT_DARK_FOREST,
