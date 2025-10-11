@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useWalletContext } from '@/contexts/WalletContext';
 import { useFhe } from '@/contexts/FheContext';
 import { initFhevm } from '@/fhevm/fhe-client';
@@ -14,11 +14,14 @@ export function useFheInstance() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsNetworkSwitch, setNeedsNetworkSwitch] = useState(false);
+  const isInitializingRef = useRef(false);
+  const lastChainIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const createFheInstance = async () => {
       if (!sdkInitialized || !isConnected || !provider) {
         setInstance(null);
+        lastChainIdRef.current = null;
         return;
       }
 
@@ -28,7 +31,16 @@ export function useFheInstance() {
         return;
       }
 
+      if (instance && chainId === lastChainIdRef.current && !isInitializingRef.current) {
+        return;
+      }
+
+      if (isInitializingRef.current) {
+        return;
+      }
+
       setNeedsNetworkSwitch(false);
+      isInitializingRef.current = true;
 
       try {
         setIsLoading(true);
@@ -64,6 +76,7 @@ export function useFheInstance() {
         );
 
         setInstance(fheInstance);
+        lastChainIdRef.current = chainId;
       } catch (err: unknown) {
         if (err && typeof err === 'object' && 'code' in err && err.code === 'NETWORK_ERROR' && 'event' in err && err.event === 'changed') {
           console.warn('Network changed during initialization, will retry automatically');
@@ -75,11 +88,13 @@ export function useFheInstance() {
         }
       } finally {
         setIsLoading(false);
+        isInitializingRef.current = false;
       }
     };
 
     createFheInstance();
-  }, [sdkInitialized, isConnected, provider, chainId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sdkInitialized, isConnected, chainId, instance]);
 
   const handleSwitchNetwork = async () => {
     try {
