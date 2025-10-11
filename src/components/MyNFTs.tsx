@@ -373,6 +373,25 @@ export default function MyNFTs() {
             // Battle completed on-chain but event not received yet
             const attackerWins = Boolean(battleRequest.attackerWins);
             const result = attackerWins ? 'win' : 'loss';
+            
+            // Try to fetch battle details from BattleEnded event
+            let reasonCode, faster, attackerCrit, defenderCrit;
+            try {
+              const battleEndedFilter = nftContract.filters.BattleEnded(BigInt(reqIdStr));
+              const endedEvents = await nftContract.queryFilter(battleEndedFilter, -50000, 'latest');
+              if (endedEvents.length > 0) {
+                const ev = endedEvents[0];
+                const parsed = nftContract.interface.parseLog({ topics: [...ev.topics], data: ev.data });
+                if (parsed?.args) {
+                  const args = parsed.args as unknown as { [key: number]: bigint | number };
+                  reasonCode = Number(args[4]);
+                  faster = Number(args[5]);
+                  attackerCrit = Number(args[6]);
+                  defenderCrit = Number(args[7]);
+                }
+              }
+            } catch {}
+            
             battles.push({
               requestId: reqIdStr,
               attackerTokenId: attackerId,
@@ -380,6 +399,10 @@ export default function MyNFTs() {
               status: 'completed',
               revealTime: 0,
               result,
+              reasonCode,
+              faster,
+              attackerCrit,
+              defenderCrit,
             });
             console.log(`Detected completed battle ${reqIdStr} from getPendingBattleByToken, result: ${result}`);
           }
