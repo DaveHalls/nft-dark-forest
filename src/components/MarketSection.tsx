@@ -78,19 +78,21 @@ export default function MarketSection() {
           let wins = 0, losses = 0, winRate = 0;
           try {
             const stats = await (read as unknown as { getBattleStats?: (id: number) => Promise<unknown> }).getBattleStats?.(id);
-            if (stats) {
-              wins = Number(stats[0] ?? stats.wins ?? 0);
-              losses = Number(stats[1] ?? stats.losses ?? 0);
-              winRate = Number(stats[3] ?? stats.winRate ?? 0);
+            if (stats && typeof stats === 'object') {
+              const statsArray = stats as Record<number, unknown> & { wins?: unknown; losses?: unknown; winRate?: unknown };
+              wins = Number(statsArray[0] ?? statsArray.wins ?? 0);
+              losses = Number(statsArray[1] ?? statsArray.losses ?? 0);
+              winRate = Number(statsArray[3] ?? statsArray.winRate ?? 0);
             } else {
               throw new Error('getBattleStats unavailable');
             }
           } catch {
             try {
               const rec = await (read as unknown as { getBattleRecord?: (id: number) => Promise<unknown> }).getBattleRecord?.(id);
-              if (rec) {
-                wins = Number(rec[0] ?? rec.wins ?? 0);
-                losses = Number(rec[1] ?? rec.losses ?? 0);
+              if (rec && typeof rec === 'object') {
+                const recArray = rec as Record<number, unknown> & { wins?: unknown; losses?: unknown };
+                wins = Number(recArray[0] ?? recArray.wins ?? 0);
+                losses = Number(recArray[1] ?? recArray.losses ?? 0);
                 const total = wins + losses;
                 winRate = total > 0 ? Math.floor((wins * 10000) / total) : 0;
               }
@@ -153,19 +155,21 @@ export default function MarketSection() {
           let wins = 0, losses = 0, winRate = 0;
           try {
             const stats = await (read as unknown as { getBattleStats?: (id: number) => Promise<unknown> }).getBattleStats?.(id);
-            if (stats) {
-              wins = Number(stats[0] ?? stats.wins ?? 0);
-              losses = Number(stats[1] ?? stats.losses ?? 0);
-              winRate = Number(stats[3] ?? stats.winRate ?? 0);
+            if (stats && typeof stats === 'object') {
+              const statsArray = stats as Record<number, unknown> & { wins?: unknown; losses?: unknown; winRate?: unknown };
+              wins = Number(statsArray[0] ?? statsArray.wins ?? 0);
+              losses = Number(statsArray[1] ?? statsArray.losses ?? 0);
+              winRate = Number(statsArray[3] ?? statsArray.winRate ?? 0);
             } else {
               throw new Error('getBattleStats unavailable');
             }
           } catch {
             try {
               const rec = await (read as unknown as { getBattleRecord?: (id: number) => Promise<unknown> }).getBattleRecord?.(id);
-              if (rec) {
-                wins = Number(rec[0] ?? rec.wins ?? 0);
-                losses = Number(rec[1] ?? rec.losses ?? 0);
+              if (rec && typeof rec === 'object') {
+                const recArray = rec as Record<number, unknown> & { wins?: unknown; losses?: unknown };
+                wins = Number(recArray[0] ?? recArray.wins ?? 0);
+                losses = Number(recArray[1] ?? recArray.losses ?? 0);
                 const total = wins + losses;
                 winRate = total > 0 ? Math.floor((wins * 10000) / total) : 0;
               }

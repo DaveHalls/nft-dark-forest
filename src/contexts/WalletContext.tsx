@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { BrowserProvider, ethers } from 'ethers';
+import { BrowserProvider } from 'ethers';
 import type { WalletState, EIP6963ProviderDetail } from '@/types/wallet';
 import { DEFAULT_CHAIN } from '@/config/chains';
 
@@ -43,6 +43,45 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('eip6963:announceProvider', handleAnnounce);
     };
   }, []);
+
+  const disconnectWallet = useCallback(() => {
+    setWalletState({
+      address: null,
+      chainId: null,
+      isConnected: false,
+      provider: null,
+    });
+    
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('wallet_connected');
+      localStorage.removeItem('wallet_rdns');
+    }
+  }, []);
+
+  const switchChain = useCallback(async () => {
+    if (!walletState.provider) return;
+    const providerWithSend = walletState.provider as { send: (method: string, params: unknown[]) => Promise<unknown> };
+
+    try {
+      await providerWithSend.send('wallet_switchEthereumChain', [
+        { chainId: DEFAULT_CHAIN.chainId },
+      ]);
+    } catch (error: unknown) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 4902) {
+        await providerWithSend.send('wallet_addEthereumChain', [
+          {
+            chainId: DEFAULT_CHAIN.chainId,
+            chainName: DEFAULT_CHAIN.chainName,
+            nativeCurrency: DEFAULT_CHAIN.nativeCurrency,
+            rpcUrls: DEFAULT_CHAIN.rpcUrls,
+            blockExplorerUrls: DEFAULT_CHAIN.blockExplorerUrls,
+          },
+        ]);
+      } else {
+        throw error;
+      }
+    }
+  }, [walletState.provider]);
 
   const connectWallet = useCallback(async (providerDetail?: EIP6963ProviderDetail) => {
     try {
@@ -86,45 +125,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
   }, [switchChain]);
 
-  const disconnectWallet = useCallback(() => {
-    setWalletState({
-      address: null,
-      chainId: null,
-      isConnected: false,
-      provider: null,
-    });
-    
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('wallet_connected');
-      localStorage.removeItem('wallet_rdns');
-    }
-  }, []);
-
-  const switchChain = useCallback(async () => {
-    if (!walletState.provider) return;
-    const providerWithSend = walletState.provider as { send: (method: string, params: unknown[]) => Promise<unknown> };
-
-    try {
-      await providerWithSend.send('wallet_switchEthereumChain', [
-        { chainId: DEFAULT_CHAIN.chainId },
-      ]);
-    } catch (error: unknown) {
-      if (error && typeof error === 'object' && 'code' in error && error.code === 4902) {
-        await providerWithSend.send('wallet_addEthereumChain', [
-          {
-            chainId: DEFAULT_CHAIN.chainId,
-            chainName: DEFAULT_CHAIN.chainName,
-            nativeCurrency: DEFAULT_CHAIN.nativeCurrency,
-            rpcUrls: DEFAULT_CHAIN.rpcUrls,
-            blockExplorerUrls: DEFAULT_CHAIN.blockExplorerUrls,
-          },
-        ]);
-      } else {
-        throw error;
-      }
-    }
-  }, [walletState.provider]);
-
   useEffect(() => {
     if (typeof window === 'undefined' || !window.ethereum) return;
 
@@ -153,15 +153,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       disconnectWallet();
     };
 
-    window.ethereum.on('accountsChanged', handleAccountsChanged);
-    window.ethereum.on('chainChanged', handleChainChanged);
-    window.ethereum.on('disconnect', handleDisconnect);
+    window.ethereum.on('accountsChanged', handleAccountsChanged as (...args: unknown[]) => void);
+    window.ethereum.on('chainChanged', handleChainChanged as (...args: unknown[]) => void);
+    window.ethereum.on('disconnect', handleDisconnect as (...args: unknown[]) => void);
 
     return () => {
       if (window.ethereum?.removeListener) {
-        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
-        window.ethereum.removeListener('chainChanged', handleChainChanged);
-        window.ethereum.removeListener('disconnect', handleDisconnect);
+        window.ethereum.removeListener('accountsChanged', handleAccountsChanged as (...args: unknown[]) => void);
+        window.ethereum.removeListener('chainChanged', handleChainChanged as (...args: unknown[]) => void);
+        window.ethereum.removeListener('disconnect', handleDisconnect as (...args: unknown[]) => void);
       }
     };
   }, [disconnectWallet, switchChain]);
