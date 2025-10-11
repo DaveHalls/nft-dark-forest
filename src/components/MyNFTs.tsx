@@ -377,6 +377,7 @@ export default function MyNFTs() {
             // Try to fetch battle details from BattleEnded event
             let reasonCode, faster, attackerCrit, defenderCrit;
             try {
+              if (!provider) throw new Error('Provider not available');
               const currentBlock = await provider.getBlockNumber();
               const fromBlock = Math.max(0, currentBlock - 50000);
               const battleEndedFilter = nftContract.filters.BattleEnded(BigInt(reqIdStr));
@@ -413,6 +414,7 @@ export default function MyNFTs() {
         }
       }
 
+      if (!provider) throw new Error('Provider not available');
       const battleCurrentBlock = await provider.getBlockNumber();
       const battleLastBlockKey = `lastBattleBlock_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
       
@@ -523,6 +525,7 @@ export default function MyNFTs() {
       for (const battle of allBattles) {
         if (battle.status === 'completed' && battle.reasonCode === undefined) {
           try {
+            if (!provider) throw new Error('Provider not available');
             const currentBlock = await provider.getBlockNumber();
             const fromBlock = Math.max(0, currentBlock - 50000);
             const battleEndedFilter = nftContract.filters.BattleEnded(BigInt(battle.requestId));
