@@ -15,13 +15,11 @@ export function useFheInstance() {
   const [error, setError] = useState<string | null>(null);
   const [needsNetworkSwitch, setNeedsNetworkSwitch] = useState(false);
   const isInitializingRef = useRef(false);
-  const lastChainIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const createFheInstance = async () => {
       if (!sdkInitialized || !isConnected || !provider) {
         setInstance(null);
-        lastChainIdRef.current = null;
         setNeedsNetworkSwitch(false);
         setError(null);
         return;
@@ -29,14 +27,11 @@ export function useFheInstance() {
 
       if (chainId !== DEFAULT_CHAIN.chainId) {
         setNeedsNetworkSwitch(true);
-        setError(`Please switch to ${DEFAULT_CHAIN.chainName} network`);
-        setInstance(null);
-        lastChainIdRef.current = null;
-        return;
+      } else {
+        setNeedsNetworkSwitch(false);
       }
 
-      if (instance && chainId === lastChainIdRef.current && !isInitializingRef.current) {
-        setNeedsNetworkSwitch(false);
+      if (instance && !isInitializingRef.current) {
         return;
       }
 
@@ -44,7 +39,6 @@ export function useFheInstance() {
         return;
       }
 
-      setNeedsNetworkSwitch(false);
       isInitializingRef.current = true;
 
       try {
@@ -53,56 +47,34 @@ export function useFheInstance() {
 
         const gatewayUrl = CONTRACT_ADDRESSES.GATEWAY;
 
-        const providerObj = provider as { provider?: unknown };
-        const ethereum: unknown = providerObj?.provider || (typeof window !== 'undefined' ? (window as { ethereum?: unknown }).ethereum : undefined);
-        const hasEip1193 = !!ethereum && typeof ethereum === 'object' && ethereum !== null && 'request' in ethereum && typeof (ethereum as { request: unknown }).request === 'function';
-        const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL;
-
-        const networkArg: unknown = hasEip1193 ? ethereum : rpcUrl;
-        if (!networkArg) {
+        const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || DEFAULT_CHAIN.rpcUrls[0];
+        if (!rpcUrl) {
           setInstance(null);
-          throw new Error('No Ethereum provider or RPC URL available');
+          throw new Error('No RPC URL configured');
         }
 
-        // Use chainId from provider when wallet is ready; otherwise use env hex string
-        let numericChainId: number;
-        if (hasEip1193) {
-          const net = await provider.getNetwork();
-          numericChainId = Number(net.chainId);
-        } else {
-          const envHex = process.env.NEXT_PUBLIC_CHAIN_ID || '0xaa36a7';
-          numericChainId = parseInt(envHex.startsWith('0x') ? envHex.slice(2) : envHex, 16);
-        }
+        const targetChainId = parseInt(DEFAULT_CHAIN.chainId.startsWith('0x') ? DEFAULT_CHAIN.chainId.slice(2) : DEFAULT_CHAIN.chainId, 16);
 
         const fheInstance = await initFhevm(
-          networkArg,
-          numericChainId,
+          rpcUrl,
+          targetChainId,
           gatewayUrl
         );
 
         setInstance(fheInstance);
-        lastChainIdRef.current = chainId;
       } catch (err: unknown) {
-        if (err && typeof err === 'object' && 'code' in err && err.code === 'NETWORK_ERROR' && 'event' in err && err.event === 'changed') {
-          console.warn('Network changed during initialization, will retry automatically');
-          setError(null);
-          setInstance(null);
-          lastChainIdRef.current = null;
-        } else {
-          console.error('Failed to create FHE instance:', err);
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          
-          let friendlyMessage = 'Failed to create FHE instance';
-          if (errorMessage.includes('Too Many Requests') || errorMessage.includes('-32005')) {
-            friendlyMessage = 'RPC rate limit reached. Please configure your own RPC URL or wait a moment';
-          } else if (errorMessage.includes('BAD_DATA')) {
-            friendlyMessage = 'Failed to connect to blockchain. Please check your network connection';
-          }
-          
-          setError(friendlyMessage);
-          setInstance(null);
-          lastChainIdRef.current = null;
+        console.error('Failed to create FHE instance:', err);
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        
+        let friendlyMessage = 'Failed to create FHE instance';
+        if (errorMessage.includes('Too Many Requests') || errorMessage.includes('-32005')) {
+          friendlyMessage = 'RPC rate limit reached. Please configure your own RPC URL or wait a moment';
+        } else if (errorMessage.includes('BAD_DATA')) {
+          friendlyMessage = 'Failed to connect to blockchain. Please check your network connection';
         }
+        
+        setError(friendlyMessage);
+        setInstance(null);
       } finally {
         setIsLoading(false);
         isInitializingRef.current = false;
@@ -111,14 +83,10 @@ export function useFheInstance() {
 
     createFheInstance();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sdkInitialized, isConnected, chainId, provider]);
+  }, [sdkInitialized, isConnected, chainId]);
 
   const handleSwitchNetwork = async () => {
     try {
-      setInstance(null);
-      lastChainIdRef.current = null;
-      isInitializingRef.current = false;
-      
       await switchChain();
       setNeedsNetworkSwitch(false);
       setError(null);
