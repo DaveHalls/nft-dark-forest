@@ -17,18 +17,19 @@ export function useFheInstance() {
   const isInitializingRef = useRef(false);
 
   useEffect(() => {
+    if (chainId !== DEFAULT_CHAIN.chainId) {
+      setNeedsNetworkSwitch(true);
+    } else {
+      setNeedsNetworkSwitch(false);
+    }
+  }, [chainId]);
+
+  useEffect(() => {
     const createFheInstance = async () => {
       if (!sdkInitialized || !isConnected || !provider) {
         setInstance(null);
-        setNeedsNetworkSwitch(false);
         setError(null);
         return;
-      }
-
-      if (chainId !== DEFAULT_CHAIN.chainId) {
-        setNeedsNetworkSwitch(true);
-      } else {
-        setNeedsNetworkSwitch(false);
       }
 
       if (instance && !isInitializingRef.current) {
