@@ -16,14 +16,15 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
 
   if (!isOpen) return null;
 
-  const handleConnect = async (wallet: any) => {
+  const handleConnect = async (wallet: { info: { uuid: string; name: string; icon: string; rdns: string }; provider: unknown }) => {
     try {
       setIsConnecting(true);
       setError(null);
       await connectWallet(wallet);
       onClose();
-    } catch (err: any) {
-      setError(err.message || 'Connection failed');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Connection failed';
+      setError(message);
     } finally {
       setIsConnecting(false);
     }

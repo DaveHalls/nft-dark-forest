@@ -21,9 +21,10 @@ export function FheProvider({ children }: { children: ReactNode }) {
         const { initSDK } = await import('@zama-fhe/relayer-sdk/bundle');
         await initSDK();
         setIsInitialized(true);
-      } catch (err: any) {
+      } catch (err) {
         console.error('FHE SDK initialization failed:', err);
-        setError(err.message || 'FHE SDK initialization failed');
+        const message = err instanceof Error ? err.message : 'FHE SDK initialization failed';
+        setError(message);
       }
     };
 

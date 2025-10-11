@@ -28,8 +28,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
     const wallets: EIP6963ProviderDetail[] = [];
 
-    const handleAnnounce = (event: any) => {
-      const detail = event.detail as EIP6963ProviderDetail;
+    const handleAnnounce = (event: Event) => {
+      const detail = (event as CustomEvent<EIP6963ProviderDetail>).detail;
       if (!wallets.find(w => w.info.uuid === detail.info.uuid)) {
         wallets.push(detail);
         setAvailableWallets([...wallets]);
@@ -80,11 +80,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       }
 
       return accounts[0];
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to connect wallet:', error);
       throw error;
     }
-  }, []);
+  }, [switchChain]);
 
   const disconnectWallet = useCallback(() => {
     setWalletState({
@@ -102,14 +102,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const switchChain = useCallback(async () => {
     if (!walletState.provider) return;
+    const providerWithSend = walletState.provider as { send: (method: string, params: unknown[]) => Promise<unknown> };
 
     try {
-      await walletState.provider.send('wallet_switchEthereumChain', [
+      await providerWithSend.send('wallet_switchEthereumChain', [
         { chainId: DEFAULT_CHAIN.chainId },
       ]);
-    } catch (error: any) {
-      if (error.code === 4902) {
-        await walletState.provider.send('wallet_addEthereumChain', [
+    } catch (error: unknown) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 4902) {
+        await providerWithSend.send('wallet_addEthereumChain', [
           {
             chainId: DEFAULT_CHAIN.chainId,
             chainName: DEFAULT_CHAIN.chainName,
