@@ -1,0 +1,40 @@
+{
+  "name": "Dark Forest - Shadow Assassin #2",
+  "description": "A FHE-powered NFT battle game built on Zama technology - NFT Dark Forest. This assassin possesses encrypted attributes that remain hidden until revealed in battle.",
+  "image": "ipfs://bafkreigi5srff2asnxwkhqbobc2vsbe45bassbaspqerkikofot4mmylue",
+  "attributes": [
+    {
+      "trait_type": "Class",
+      "value": "Shadow Assassin"
+    },
+    {
+      "trait_type": "Class ID",
+      "value": 2
+    },
+    {
+      "trait_type": "Technology",
+      "value": "Zama FHE"
+    },
+    {
+      "trait_type": "Attack",
+      "value": "Encrypted"
+    },
+    {
+      "trait_type": "Defense",
+      "value": "Encrypted"
+    },
+    {
+      "trait_type": "HP",
+      "value": "Encrypted"
+    },
+    {
+      "trait_type": "Speed",
+      "value": "Encrypted"
+    },
+    {
+      "trait_type": "Luck",
+      "value": "Encrypted"
+    }
+  ]
+}
+

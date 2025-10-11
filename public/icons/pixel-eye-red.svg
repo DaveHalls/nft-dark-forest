@@ -1,0 +1,10 @@
+<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+  <!-- 红色圆圈（像素风：较粗描边） -->
+  <circle cx="8" cy="8" r="7" stroke="#DC2626" stroke-width="2" fill="none"/>
+
+  <!-- 眼白（像素块） -->
+  <rect x="4" y="7" width="8" height="2" fill="#FFFFFF"/>
+  <!-- 瞳孔（像素块） -->
+  <rect x="7" y="7" width="2" height="2" fill="#000000"/>
+</svg>
+

@@ -1,0 +1,40 @@
+{
+  "name": "Dark Forest - Elite Archer #3",
+  "description": "A FHE-powered NFT battle game built on Zama technology - NFT Dark Forest. This archer possesses encrypted attributes that remain hidden until revealed in battle.",
+  "image": "ipfs://bafkreidvir3s5ml6cldydcrow7yguyw762fghnv27qeecvxw67ireakbna",
+  "attributes": [
+    {
+      "trait_type": "Class",
+      "value": "Elite Archer"
+    },
+    {
+      "trait_type": "Class ID",
+      "value": 3
+    },
+    {
+      "trait_type": "Technology",
+      "value": "Zama FHE"
+    },
+    {
+      "trait_type": "Attack",
+      "value": "Encrypted"
+    },
+    {
+      "trait_type": "Defense",
+      "value": "Encrypted"
+    },
+    {
+      "trait_type": "HP",
+      "value": "Encrypted"
+    },
+    {
+      "trait_type": "Speed",
+      "value": "Encrypted"
+    },
+    {
+      "trait_type": "Luck",
+      "value": "Encrypted"
+    }
+  ]
+}
+
