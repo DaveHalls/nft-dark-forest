@@ -369,7 +369,6 @@ export default function MyNFTs() {
       }
 
       const battleCurrentBlock = await provider.getBlockNumber();
-      const battleCacheKey = `battleHistory_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
       const battleLastBlockKey = `lastBattleBlock_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
       
       let battleFromBlock = Math.max(0, battleCurrentBlock - 50000);
