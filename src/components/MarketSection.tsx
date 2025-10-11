@@ -259,7 +259,7 @@ export default function MarketSection() {
         )
       ) : (
         myItems.length === 0 ? (
-          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-8 text-center text-gray-400">You don't have any NFTs yet</div>
+          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-8 text-center text-gray-400">You don&apos;t have any NFTs yet</div>
         ) : (
           <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
              {myItems.map(it => (

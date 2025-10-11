@@ -243,7 +243,7 @@ export default function NFTDetailModal({
 
             {!attributes && !isLoading && (
               <div className="bg-blue-900/20 border border-blue-700 rounded p-4 text-blue-300 text-sm mb-4">
-                Click the [Decrypt Attributes] button above and sign with your wallet to view the NFT's encrypted attributes.
+                Click the [Decrypt Attributes] button above and sign with your wallet to view the NFT&apos;s encrypted attributes.
               </div>
             )}
 

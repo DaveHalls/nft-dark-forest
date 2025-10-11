@@ -6,7 +6,7 @@ export default function FheScriptLoader() {
   return (
     <Script
       src="https://cdn.zama.ai/relayer-sdk-js/0.2.0/relayer-sdk-js.umd.cjs"
-      strategy="beforeInteractive"
+      strategy="afterInteractive"
       crossOrigin="anonymous"
     />
   );
