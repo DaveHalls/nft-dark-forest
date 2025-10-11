@@ -65,6 +65,7 @@ export default function MyNFTs() {
   const [filter, setFilter] = useState<'all' | 'available' | 'unavailable'>('all');
   const lastRecoveredCountRef = useRef(0);
   const lastCheckTsRef = useRef(0);
+  const lastLoadAddressRef = useRef<string | null>(null);
   const [isInfoExpanded, setIsInfoExpanded] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('battleInfoExpanded');
@@ -75,16 +76,20 @@ export default function MyNFTs() {
 
   useEffect(() => {
     if (isConnected && provider && address) {
-      loadMyNFTs();
+      if (lastLoadAddressRef.current !== address) {
+        lastLoadAddressRef.current = address;
+        loadMyNFTs();
+      }
     } else {
       setNfts([]);
+      lastLoadAddressRef.current = null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConnected, provider, address]);
+  }, [isConnected, address]);
 
   // Subscribe to training events for timely status synchronization
   useEffect(() => {
-    if (!provider || !isConnected) return;
+    if (!provider || !isConnected || !address) return;
     const nftContract = new ethers.Contract(
       CONTRACT_ADDRESSES.NFT_DARK_FOREST,
       DarkForestNFTABI,
@@ -116,7 +121,8 @@ export default function MyNFTs() {
       nftContract.off('UpgradeStarted', onUpgradeStarted);
       nftContract.off('UpgradeFinished', onUpgradeFinished);
     };
-  }, [provider, isConnected]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected, address]);
 
   // Local countdown
   useEffect(() => {
