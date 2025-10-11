@@ -23,6 +23,38 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   });
   const [availableWallets, setAvailableWallets] = useState<EIP6963ProviderDetail[]>([]);
   const hasAttemptedReconnect = useRef(false);
+  const activeEip1193Ref = useRef<unknown>(null);
+
+  const getActiveEip1193Provider = useCallback(() => {
+    const fromRef = activeEip1193Ref.current as { request?: (args: { method: string; params?: unknown[] }) => Promise<unknown>; send?: (method: string, params?: unknown[]) => Promise<unknown> } | null;
+    if (fromRef) return fromRef;
+    const fromWrapped = (walletState.provider as unknown as { provider?: unknown })?.provider as { request?: (args: { method: string; params?: unknown[] }) => Promise<unknown>; send?: (method: string, params?: unknown[]) => Promise<unknown> } | undefined;
+    if (fromWrapped) return fromWrapped;
+    const winEth = typeof window !== 'undefined' ? (window as unknown as { ethereum?: { request?: (args: { method: string; params?: unknown[] }) => Promise<unknown>; send?: (method: string, params?: unknown[]) => Promise<unknown> } }).ethereum : undefined;
+    return winEth ?? null;
+  }, [walletState.provider]);
+
+  const eipRequest = useCallback(async (method: string, params?: unknown[]) => {
+    const eip = getActiveEip1193Provider();
+    if (!eip) throw new Error('No active wallet provider');
+    if (
+      typeof eip === 'object' &&
+      eip &&
+      'request' in eip &&
+      typeof (eip as { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> }).request === 'function'
+    ) {
+      return await (eip as { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> }).request({ method, params });
+    }
+    if (
+      typeof eip === 'object' &&
+      eip &&
+      'send' in eip &&
+      typeof (eip as { send: (method: string, params?: unknown[]) => Promise<unknown> }).send === 'function'
+    ) {
+      return await (eip as { send: (method: string, params?: unknown[]) => Promise<unknown> }).send(method, params ?? []);
+    }
+    throw new Error('Active wallet provider does not support request/send');
+  }, [getActiveEip1193Provider]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -62,22 +94,18 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const switchChain = useCallback(async () => {
-    if (!walletState.provider) return;
-    const providerWithSend = walletState.provider as { send: (method: string, params: unknown[]) => Promise<unknown> };
-
     try {
-      await providerWithSend.send('wallet_switchEthereumChain', [
+      await eipRequest('wallet_switchEthereumChain', [
         { chainId: DEFAULT_CHAIN.chainId },
       ]);
 
-      const underlying = (walletState.provider as unknown as { provider?: unknown })?.provider;
-      const newProvider = underlying ? new BrowserProvider(underlying as never) : walletState.provider;
-      const network = await newProvider.getNetwork();
-      const chainId = `0x${network.chainId.toString(16)}`;
-      setWalletState(prev => ({ ...prev, chainId, provider: newProvider }));
+      const eip = getActiveEip1193Provider();
+      const chainId = (await eipRequest('eth_chainId')) as string;
+      const newProvider = eip ? new BrowserProvider(eip as never) : walletState.provider;
+      setWalletState(prev => ({ ...prev, chainId, provider: newProvider ?? null }));
     } catch (error: unknown) {
-      if (error && typeof error === 'object' && 'code' in error && error.code === 4902) {
-        await providerWithSend.send('wallet_addEthereumChain', [
+      if (error && typeof error === 'object' && 'code' in error && (error as { code: unknown }).code === 4902) {
+        await eipRequest('wallet_addEthereumChain', [
           {
             chainId: DEFAULT_CHAIN.chainId,
             chainName: DEFAULT_CHAIN.chainName,
@@ -86,17 +114,16 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             blockExplorerUrls: DEFAULT_CHAIN.blockExplorerUrls,
           },
         ]);
-        
-        const underlying = (walletState.provider as unknown as { provider?: unknown })?.provider;
-        const newProvider = underlying ? new BrowserProvider(underlying as never) : walletState.provider;
-        const network = await newProvider.getNetwork();
-        const chainId = `0x${network.chainId.toString(16)}`;
-        setWalletState(prev => ({ ...prev, chainId, provider: newProvider }));
+
+        const chainId = (await eipRequest('eth_chainId')) as string;
+        const eip = getActiveEip1193Provider();
+        const newProvider = eip ? new BrowserProvider(eip as never) : walletState.provider;
+        setWalletState(prev => ({ ...prev, chainId, provider: newProvider ?? null }));
       } else {
         throw error;
       }
     }
-  }, [walletState.provider]);
+  }, [eipRequest, getActiveEip1193Provider, walletState.provider]);
 
   const connectWallet = useCallback(async (providerDetail?: EIP6963ProviderDetail) => {
     try {
@@ -104,16 +131,16 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       
       if (providerDetail) {
         provider = new BrowserProvider(providerDetail.provider);
+        activeEip1193Ref.current = providerDetail.provider;
       } else if (typeof window !== 'undefined' && window.ethereum) {
         provider = new BrowserProvider(window.ethereum);
+        activeEip1193Ref.current = window.ethereum;
       } else {
         throw new Error('No wallet detected');
       }
 
       const accounts = await provider.send('eth_requestAccounts', []);
-      const network = await provider.getNetwork();
-      
-      const chainId = `0x${network.chainId.toString(16)}`;
+      const chainId = (await eipRequest('eth_chainId')) as string;
 
       setWalletState({
         address: accounts[0],
@@ -141,46 +168,42 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       }
       throw error;
     }
-  }, [switchChain]);
+  }, [switchChain, eipRequest]);
 
   useEffect(() => {
-    const eth = (typeof window !== 'undefined' ? (window as unknown as { ethereum?: unknown }).ethereum : undefined);
-    if (!eth || typeof eth !== 'object') return;
+    const eip = getActiveEip1193Provider() as { on?: (event: string, listener: (...args: unknown[]) => void) => void; removeListener?: (event: string, listener: (...args: unknown[]) => void) => void } | null;
+    if (!eip) return;
 
-    const anyEth = eth as { on?: (event: string, listener: (...args: unknown[]) => void) => void; removeListener?: (event: string, listener: (...args: unknown[]) => void) => void };
-
-    const handleAccountsChanged = (accounts: string[]) => {
-      if (accounts.length === 0) {
+    const handleAccountsChanged = (accounts: unknown) => {
+      const accountsArray = Array.isArray(accounts) ? (accounts as string[]) : [];
+      if (accountsArray.length === 0) {
         disconnectWallet();
       } else {
-        setWalletState(prev => ({ ...prev, address: accounts[0] }));
+        setWalletState(prev => ({ ...prev, address: accountsArray[0] }));
       }
     };
 
-    const handleChainChanged = async (newChainId: string) => {
-      const hasWindowEth = typeof window !== 'undefined' && (window as unknown as { ethereum?: unknown }).ethereum;
-      if (hasWindowEth) {
-        const newProvider = new BrowserProvider((window as unknown as { ethereum: unknown }).ethereum as never);
-        setWalletState(prev => ({ ...prev, chainId: newChainId, provider: newProvider }));
-      } else {
-        setWalletState(prev => ({ ...prev, chainId: newChainId }));
-      }
+    const handleChainChanged = async (newChainId: unknown) => {
+      const newChainIdStr = String(newChainId);
+      const eipInner = getActiveEip1193Provider();
+      const newProvider = eipInner ? new BrowserProvider(eipInner as never) : walletState.provider;
+      setWalletState(prev => ({ ...prev, chainId: newChainIdStr, provider: newProvider ?? null }));
     };
 
     const handleDisconnect = () => {
       disconnectWallet();
     };
 
-    anyEth.on?.('accountsChanged', handleAccountsChanged as (...args: unknown[]) => void);
-    anyEth.on?.('chainChanged', handleChainChanged as (...args: unknown[]) => void);
-    anyEth.on?.('disconnect', handleDisconnect as (...args: unknown[]) => void);
+    eip.on?.('accountsChanged', handleAccountsChanged as (...args: unknown[]) => void);
+    eip.on?.('chainChanged', handleChainChanged as (...args: unknown[]) => void);
+    eip.on?.('disconnect', handleDisconnect as (...args: unknown[]) => void);
 
     return () => {
-      anyEth.removeListener?.('accountsChanged', handleAccountsChanged as (...args: unknown[]) => void);
-      anyEth.removeListener?.('chainChanged', handleChainChanged as (...args: unknown[]) => void);
-      anyEth.removeListener?.('disconnect', handleDisconnect as (...args: unknown[]) => void);
+      eip.removeListener?.('accountsChanged', handleAccountsChanged as (...args: unknown[]) => void);
+      eip.removeListener?.('chainChanged', handleChainChanged as (...args: unknown[]) => void);
+      eip.removeListener?.('disconnect', handleDisconnect as (...args: unknown[]) => void);
     };
-  }, [disconnectWallet]);
+  }, [disconnectWallet, getActiveEip1193Provider, walletState.provider]);
 
   useEffect(() => {
     const reconnect = async () => {
