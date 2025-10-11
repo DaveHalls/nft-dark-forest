@@ -321,7 +321,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
           const read = new ethers.Contract(
             CONTRACT_ADDRESSES.NFT_DARK_FOREST,
             DarkForestNFTABI,
-            provider!
+            provider as unknown as ethers.ContractRunner
           );
           const req = await read.getBattleRequest(BigInt(battle.requestId));
           const isPending = (req.isPending as boolean) === true;
