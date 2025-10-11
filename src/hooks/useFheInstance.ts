@@ -85,9 +85,10 @@ export function useFheInstance() {
       await switchChain();
       setNeedsNetworkSwitch(false);
       setError(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to switch network:', err);
-      setError(err.message || 'Failed to switch network');
+      const message = err instanceof Error ? err.message : 'Failed to switch network';
+      setError(message);
     }
   };
 

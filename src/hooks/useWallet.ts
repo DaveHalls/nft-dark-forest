@@ -19,8 +19,9 @@ export function useWallet() {
 
     const wallets: EIP6963ProviderDetail[] = [];
 
-    window.addEventListener('eip6963:announceProvider', (event: any) => {
-      wallets.push(event.detail);
+    window.addEventListener('eip6963:announceProvider', (event: Event) => {
+      const customEvent = event as CustomEvent<EIP6963ProviderDetail>;
+      wallets.push(customEvent.detail);
       setAvailableWallets([...wallets]);
     });
 
@@ -55,11 +56,11 @@ export function useWallet() {
       });
 
       return accounts[0];
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to connect wallet:', error);
       throw error;
     }
-  }, []);
+  }, [switchChain]);
 
   const disconnectWallet = useCallback(() => {
     setWalletState({
@@ -77,8 +78,8 @@ export function useWallet() {
       await walletState.provider.send('wallet_switchEthereumChain', [
         { chainId: DEFAULT_CHAIN.chainId },
       ]);
-    } catch (error: any) {
-      if (error.code === 4902) {
+    } catch (error: unknown) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 4902) {
         await walletState.provider.send('wallet_addEthereumChain', [
           {
             chainId: DEFAULT_CHAIN.chainId,

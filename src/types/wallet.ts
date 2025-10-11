@@ -5,13 +5,13 @@ export interface EIP6963ProviderDetail {
     icon: string;
     rdns: string;
   };
-  provider: any;
+  provider: unknown;
 }
 
 export interface WalletState {
   address: string | null;
   chainId: string | null;
   isConnected: boolean;
-  provider: any;
+  provider: unknown;
 }
 

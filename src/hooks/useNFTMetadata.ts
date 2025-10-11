@@ -35,9 +35,10 @@ export function useNFTMetadata(metadataUri: string | null) {
         };
 
         setMetadata(processedMetadata);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Failed to fetch NFT metadata:', err);
-        setError(err.message || 'Failed to fetch metadata');
+        const message = err instanceof Error ? err.message : 'Failed to fetch metadata';
+        setError(message);
       } finally {
         setIsLoading(false);
       }
