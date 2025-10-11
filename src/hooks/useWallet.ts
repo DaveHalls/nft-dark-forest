@@ -73,14 +73,15 @@ export function useWallet() {
 
   const switchChain = useCallback(async () => {
     if (!walletState.provider) return;
+    const providerWithSend = walletState.provider as { send: (method: string, params: unknown[]) => Promise<unknown> };
 
     try {
-      await walletState.provider.send('wallet_switchEthereumChain', [
+      await providerWithSend.send('wallet_switchEthereumChain', [
         { chainId: DEFAULT_CHAIN.chainId },
       ]);
     } catch (error: unknown) {
       if (error && typeof error === 'object' && 'code' in error && error.code === 4902) {
-        await walletState.provider.send('wallet_addEthereumChain', [
+        await providerWithSend.send('wallet_addEthereumChain', [
           {
             chainId: DEFAULT_CHAIN.chainId,
             chainName: DEFAULT_CHAIN.chainName,
@@ -98,17 +99,19 @@ export function useWallet() {
   useEffect(() => {
     if (typeof window === 'undefined' || !window.ethereum) return;
 
-    const handleAccountsChanged = (accounts: string[]) => {
-      if (accounts.length === 0) {
+    const handleAccountsChanged = (accounts: unknown) => {
+      const accountsArray = accounts as string[];
+      if (accountsArray.length === 0) {
         disconnectWallet();
       } else {
-        setWalletState(prev => ({ ...prev, address: accounts[0] }));
+        setWalletState(prev => ({ ...prev, address: accountsArray[0] }));
       }
     };
 
-    const handleChainChanged = (chainId: string) => {
-      setWalletState(prev => ({ ...prev, chainId }));
-      if (chainId !== DEFAULT_CHAIN.chainId) {
+    const handleChainChanged = (chainId: unknown) => {
+      const chainIdStr = chainId as string;
+      setWalletState(prev => ({ ...prev, chainId: chainIdStr }));
+      if (chainIdStr !== DEFAULT_CHAIN.chainId) {
         switchChain();
       }
     };

@@ -10,7 +10,7 @@ import { DEFAULT_CHAIN } from '@/config/chains';
 export function useFheInstance() {
   const { provider, isConnected, chainId, switchChain } = useWalletContext();
   const { isInitialized: sdkInitialized } = useFhe();
-  const [instance, setInstance] = useState<any | null>(null);
+  const [instance, setInstance] = useState<unknown>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsNetworkSwitch, setNeedsNetworkSwitch] = useState(false);
@@ -36,12 +36,12 @@ export function useFheInstance() {
 
         const gatewayUrl = CONTRACT_ADDRESSES.GATEWAY;
 
-        // Prefer EIP-1193 provider (wallet), fallback to RPC URL when wallet is not ready
-        const ethereum: any = (provider as any)?.provider || (typeof window !== 'undefined' ? (window as any).ethereum : undefined);
-        const hasEip1193 = !!ethereum && typeof ethereum.request === 'function';
+        const providerObj = provider as { provider?: unknown };
+        const ethereum: unknown = providerObj?.provider || (typeof window !== 'undefined' ? (window as { ethereum?: unknown }).ethereum : undefined);
+        const hasEip1193 = !!ethereum && typeof ethereum === 'object' && ethereum !== null && 'request' in ethereum && typeof (ethereum as { request: unknown }).request === 'function';
         const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL;
 
-        const networkArg: any = hasEip1193 ? ethereum : rpcUrl;
+        const networkArg: unknown = hasEip1193 ? ethereum : rpcUrl;
         if (!networkArg) {
           setInstance(null);
           throw new Error('No Ethereum provider or RPC URL available');
@@ -64,13 +64,14 @@ export function useFheInstance() {
         );
 
         setInstance(fheInstance);
-      } catch (err: any) {
-        if (err.code === 'NETWORK_ERROR' && err.event === 'changed') {
+      } catch (err: unknown) {
+        if (err && typeof err === 'object' && 'code' in err && err.code === 'NETWORK_ERROR' && 'event' in err && err.event === 'changed') {
           console.warn('Network changed during initialization, will retry automatically');
           setError(null);
         } else {
           console.error('Failed to create FHE instance:', err);
-          setError(err.message || 'Failed to create FHE instance');
+          const message = err instanceof Error ? err.message : 'Failed to create FHE instance';
+          setError(message);
         }
       } finally {
         setIsLoading(false);
