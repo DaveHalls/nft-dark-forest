@@ -34,17 +34,31 @@ export function useFheInstance() {
         setIsLoading(true);
         setError(null);
 
-        const network = await provider.getNetwork();
-        const numericChainId = Number(network.chainId);
         const gatewayUrl = CONTRACT_ADDRESSES.GATEWAY;
 
-        const ethersProvider = provider.provider || window.ethereum;
-        if (!ethersProvider) {
-          throw new Error('No Ethereum provider available');
+        // Prefer EIP-1193 provider (wallet), fallback to RPC URL when wallet is not ready
+        const ethereum: any = (provider as any)?.provider || (typeof window !== 'undefined' ? (window as any).ethereum : undefined);
+        const hasEip1193 = !!ethereum && typeof ethereum.request === 'function';
+        const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL;
+
+        const networkArg: any = hasEip1193 ? ethereum : rpcUrl;
+        if (!networkArg) {
+          setInstance(null);
+          throw new Error('No Ethereum provider or RPC URL available');
+        }
+
+        // Use chainId from provider when wallet is ready; otherwise use env hex string
+        let numericChainId: number;
+        if (hasEip1193) {
+          const net = await provider.getNetwork();
+          numericChainId = Number(net.chainId);
+        } else {
+          const envHex = process.env.NEXT_PUBLIC_CHAIN_ID || '0xaa36a7';
+          numericChainId = parseInt(envHex.startsWith('0x') ? envHex.slice(2) : envHex, 16);
         }
 
         const fheInstance = await initFhevm(
-          ethersProvider,
+          networkArg,
           numericChainId,
           gatewayUrl
         );
