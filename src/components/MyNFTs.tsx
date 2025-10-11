@@ -494,25 +494,53 @@ export default function MyNFTs() {
       }
 
       // merge and dedupe by requestId; prefer completed > revealing > waiting
-      const merged = [...cachedBattles, ...battles];
+      const merged = [...battles, ...cachedBattles];
       const byId = new Map<string, BattleInfo>();
       const rank = (s: BattleInfo['status']) => (s === 'completed' ? 3 : s === 'revealing' ? 2 : 1);
+      
       for (const b of merged) {
         const key = b.requestId || `${b.attackerTokenId}-${b.defenderTokenId}-${b.revealTime}`;
         const prev = byId.get(key);
-        if (!prev || rank(b.status) > rank(prev.status)) {
+        
+        if (!prev) {
           byId.set(key, b);
-        } else if (prev && rank(b.status) === rank(prev.status)) {
+        } else if (rank(b.status) > rank(prev.status)) {
+          byId.set(key, { ...prev, ...b });
+        } else if (rank(b.status) === rank(prev.status)) {
           byId.set(key, {
             ...prev,
-            reasonCode: b.reasonCode !== undefined ? b.reasonCode : prev.reasonCode,
-            faster: b.faster !== undefined ? b.faster : prev.faster,
-            attackerCrit: b.attackerCrit !== undefined ? b.attackerCrit : prev.attackerCrit,
-            defenderCrit: b.defenderCrit !== undefined ? b.defenderCrit : prev.defenderCrit,
+            ...b,
+            reasonCode: b.reasonCode ?? prev.reasonCode,
+            faster: b.faster ?? prev.faster,
+            attackerCrit: b.attackerCrit ?? prev.attackerCrit,
+            defenderCrit: b.defenderCrit ?? prev.defenderCrit,
           });
         }
       }
-      const allBattles = Array.from(byId.values());
+      
+      let allBattles = Array.from(byId.values());
+      
+      for (const battle of allBattles) {
+        if (battle.status === 'completed' && battle.reasonCode === undefined) {
+          try {
+            const currentBlock = await provider.getBlockNumber();
+            const fromBlock = Math.max(0, currentBlock - 50000);
+            const battleEndedFilter = nftContract.filters.BattleEnded(BigInt(battle.requestId));
+            const endedEvents = await nftContract.queryFilter(battleEndedFilter, fromBlock, 'latest');
+            if (endedEvents.length > 0) {
+              const ev = endedEvents[0];
+              const parsed = nftContract.interface.parseLog({ topics: [...ev.topics], data: ev.data });
+              if (parsed?.args) {
+                const args = parsed.args as unknown as { [key: number]: bigint | number };
+                battle.reasonCode = Number(args[4]);
+                battle.faster = Number(args[5]);
+                battle.attackerCrit = Number(args[6]);
+                battle.defenderCrit = Number(args[7]);
+              }
+            }
+          } catch {}
+        }
+      }
       
       try {
         localStorage.setItem(battleCacheKey, JSON.stringify(allBattles));
