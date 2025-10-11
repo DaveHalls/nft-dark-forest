@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from 'react';
 import { BrowserProvider } from 'ethers';
 import type { WalletState, EIP6963ProviderDetail } from '@/types/wallet';
 import { DEFAULT_CHAIN } from '@/config/chains';
@@ -22,6 +22,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     provider: null,
   });
   const [availableWallets, setAvailableWallets] = useState<EIP6963ProviderDetail[]>([]);
+  const hasAttemptedReconnect = useRef(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -56,6 +57,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem('wallet_connected');
       localStorage.removeItem('wallet_rdns');
     }
+    
+    hasAttemptedReconnect.current = true;
   }, []);
 
   const switchChain = useCallback(async () => {
@@ -171,10 +174,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const reconnect = async () => {
+      if (hasAttemptedReconnect.current) return;
+      
       const wasConnected = localStorage.getItem('wallet_connected');
       const savedRdns = localStorage.getItem('wallet_rdns');
       
       if (wasConnected && availableWallets.length > 0) {
+        hasAttemptedReconnect.current = true;
         try {
           const wallet = savedRdns 
             ? availableWallets.find(w => w.info.rdns === savedRdns)

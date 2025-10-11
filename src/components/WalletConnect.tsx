@@ -22,28 +22,27 @@ export default function WalletConnect() {
         </button>
 
         {showMenu && (
-          <div className="absolute right-0 mt-2 w-48 bg-gray-800 rounded-lg shadow-xl border border-gray-700 overflow-hidden z-50">
-            <div className="px-4 py-3 border-b border-gray-700">
-              <p className="text-xs text-gray-400">Connected</p>
-              <p className="text-sm text-white font-mono">{formatAddress(address)}</p>
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setShowMenu(false)}
+            ></div>
+            <div className="absolute right-0 mt-2 w-48 bg-gray-800 rounded-lg shadow-xl border border-gray-700 overflow-hidden z-50">
+              <div className="px-4 py-3 border-b border-gray-700">
+                <p className="text-xs text-gray-400">Connected</p>
+                <p className="text-sm text-white font-mono">{formatAddress(address)}</p>
+              </div>
+              <button
+                onClick={() => {
+                  disconnectWallet();
+                  setShowMenu(false);
+                }}
+                className="w-full px-4 py-2 text-left text-red-400 hover:bg-gray-700 transition-colors"
+              >
+                Disconnect
+              </button>
             </div>
-            <button
-              onClick={() => {
-                disconnectWallet();
-                setShowMenu(false);
-              }}
-              className="w-full px-4 py-2 text-left text-red-400 hover:bg-gray-700 transition-colors"
-            >
-              Disconnect
-            </button>
-          </div>
-        )}
-
-        {showMenu && (
-          <div
-            className="fixed inset-0 z-40"
-            onClick={() => setShowMenu(false)}
-          ></div>
+          </>
         )}
       </div>
     );
