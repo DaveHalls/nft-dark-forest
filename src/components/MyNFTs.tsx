@@ -377,8 +377,10 @@ export default function MyNFTs() {
             // Try to fetch battle details from BattleEnded event
             let reasonCode, faster, attackerCrit, defenderCrit;
             try {
+              const currentBlock = await provider.getBlockNumber();
+              const fromBlock = Math.max(0, currentBlock - 50000);
               const battleEndedFilter = nftContract.filters.BattleEnded(BigInt(reqIdStr));
-              const endedEvents = await nftContract.queryFilter(battleEndedFilter, -50000, 'latest');
+              const endedEvents = await nftContract.queryFilter(battleEndedFilter, fromBlock, 'latest');
               if (endedEvents.length > 0) {
                 const ev = endedEvents[0];
                 const parsed = nftContract.interface.parseLog({ topics: [...ev.topics], data: ev.data });
@@ -390,7 +392,9 @@ export default function MyNFTs() {
                   defenderCrit = Number(args[7]);
                 }
               }
-            } catch {}
+            } catch (err) {
+              console.warn(`Failed to fetch battle details for ${reqIdStr}:`, err);
+            }
             
             battles.push({
               requestId: reqIdStr,
@@ -498,6 +502,14 @@ export default function MyNFTs() {
         const prev = byId.get(key);
         if (!prev || rank(b.status) > rank(prev.status)) {
           byId.set(key, b);
+        } else if (prev && rank(b.status) === rank(prev.status)) {
+          byId.set(key, {
+            ...prev,
+            reasonCode: b.reasonCode !== undefined ? b.reasonCode : prev.reasonCode,
+            faster: b.faster !== undefined ? b.faster : prev.faster,
+            attackerCrit: b.attackerCrit !== undefined ? b.attackerCrit : prev.attackerCrit,
+            defenderCrit: b.defenderCrit !== undefined ? b.defenderCrit : prev.defenderCrit,
+          });
         }
       }
       const allBattles = Array.from(byId.values());
