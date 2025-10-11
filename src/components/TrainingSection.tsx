@@ -513,7 +513,7 @@ export default function TrainingSection() {
       nft.off('UpgradeStarted', onStarted);
       nft.off('UpgradeFinished', onFinished);
     };
-  }, [provider, isConnected, owned, showNotification]);
+  }, [provider, isConnected, owned, showNotification, address]);
 
   useEffect(() => {
     const timer = setInterval(() => {
