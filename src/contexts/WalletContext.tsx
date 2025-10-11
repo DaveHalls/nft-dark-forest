@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { BrowserProvider } from 'ethers';
+import { BrowserProvider, ethers } from 'ethers';
 import type { WalletState, EIP6963ProviderDetail } from '@/types/wallet';
 import { DEFAULT_CHAIN } from '@/config/chains';
 
@@ -46,7 +46,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const connectWallet = useCallback(async (providerDetail?: EIP6963ProviderDetail) => {
     try {
-      let provider;
+      let provider: BrowserProvider;
       
       if (providerDetail) {
         provider = new BrowserProvider(providerDetail.provider);

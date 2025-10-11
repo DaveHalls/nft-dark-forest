@@ -1,3 +1,5 @@
+import type { Eip1193Provider, BrowserProvider } from 'ethers';
+
 export interface EIP6963ProviderDetail {
   info: {
     uuid: string;
@@ -5,13 +7,13 @@ export interface EIP6963ProviderDetail {
     icon: string;
     rdns: string;
   };
-  provider: unknown;
+  provider: Eip1193Provider;
 }
 
 export interface WalletState {
   address: string | null;
   chainId: string | null;
   isConnected: boolean;
-  provider: unknown;
+  provider: BrowserProvider | null;
 }
 

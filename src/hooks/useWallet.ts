@@ -73,7 +73,7 @@ export function useWallet() {
 
   const switchChain = useCallback(async () => {
     if (!walletState.provider) return;
-    const providerWithSend = walletState.provider as { send: (method: string, params: unknown[]) => Promise<unknown> };
+    const providerWithSend = walletState.provider as unknown as { send: (method: string, params: unknown[]) => Promise<unknown> };
 
     try {
       await providerWithSend.send('wallet_switchEthereumChain', [
