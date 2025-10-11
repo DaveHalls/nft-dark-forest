@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { ethers } from 'ethers';
 import { DarkForestNFTABI, CONTRACT_ADDRESSES } from '@/config';
@@ -55,6 +55,7 @@ export default function TrainingSection() {
   const [activeTab, setActiveTab] = useState<'training' | 'success' | 'failure'>('training');
   const [selectedNFT, setSelectedNFT] = useState<OwnedNFT | null>(null);
   const [isOperatorApproved, setIsOperatorApproved] = useState(false);
+  const lastLoadAddressRef = useRef<string | null>(null);
   const [isInfoExpanded, setIsInfoExpanded] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('trainingInfoExpanded');
@@ -65,13 +66,17 @@ export default function TrainingSection() {
 
   useEffect(() => {
     if (isConnected && provider && address) {
-      loadOwned();
+      if (lastLoadAddressRef.current !== address) {
+        lastLoadAddressRef.current = address;
+        loadOwned();
+      }
     } else {
       setOwned([]);
       setIsOperatorApproved(false);
+      lastLoadAddressRef.current = null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConnected, provider, address]);
+  }, [isConnected, address]);
 
   const getContract = async () => {
     if (!provider) throw new Error('Provider not ready');
@@ -417,6 +422,8 @@ export default function TrainingSection() {
       const comp = Number(completeAt);
       const now = Math.floor(Date.now() / 1000);
       
+      let nftInfo: OwnedNFT | undefined;
+      
       setOwned(prev => {
         const updated = prev.map(n => n.tokenId === t ? {
           ...n,
@@ -425,7 +432,8 @@ export default function TrainingSection() {
           upgradeRemaining: Math.max(0, comp - now),
         } : n);
 
-        // Sync to localStorage cache immediately
+        nftInfo = prev.find(n => n.tokenId === t);
+
         try {
           const cacheKey = `ownedNFTsCache_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
           localStorage.setItem(cacheKey, JSON.stringify(updated));
@@ -436,7 +444,6 @@ export default function TrainingSection() {
         return updated;
       });
 
-      const nftInfo = owned.find(n => n.tokenId === t);
       if (nftInfo) {
         setTrainingRecords(prev => {
           const exists = prev.find(r => r.tokenId === t && r.attrIndex === attr && r.status === 'training');
@@ -444,8 +451,8 @@ export default function TrainingSection() {
           
           const newRecord: TrainingRecord = {
             tokenId: t,
-            className: nftInfo.className,
-            imageUrl: nftInfo.imageUrl,
+            className: nftInfo!.className,
+            imageUrl: nftInfo!.imageUrl,
             attrIndex: attr,
             attrName: ATTR_NAMES[attr],
             status: 'training',
@@ -513,7 +520,8 @@ export default function TrainingSection() {
       nft.off('UpgradeStarted', onStarted);
       nft.off('UpgradeFinished', onFinished);
     };
-  }, [provider, isConnected, owned, showNotification, address]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected, address]);
 
   useEffect(() => {
     const timer = setInterval(() => {
