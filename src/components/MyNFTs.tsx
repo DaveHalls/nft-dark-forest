@@ -515,18 +515,29 @@ export default function MyNFTs() {
         }
       }
 
-      // merge and dedupe by requestId; prefer completed > revealing > waiting
+      // merge and dedupe; prefer completed > revealing > waiting > initiating
       const merged = [...battles, ...cachedBattles];
       const byId = new Map<string, BattleInfo>();
-      const rank = (s: BattleInfo['status']) => (s === 'completed' ? 3 : s === 'revealing' ? 2 : 1);
+      const rank = (s: BattleInfo['status']) => (s === 'completed' ? 3 : s === 'revealing' ? 2 : s === 'waiting' ? 1 : 0);
       
       for (const b of merged) {
-        const key = b.requestId || `${b.attackerTokenId}-${b.defenderTokenId}-${b.revealTime}`;
+        const hasReqId = Boolean(b.requestId && b.requestId !== '');
+        const key = hasReqId ? b.requestId : `attacker-${b.attackerTokenId}`;
         const prev = byId.get(key);
         
         if (!prev) {
           byId.set(key, b);
-        } else if (rank(b.status) > rank(prev.status)) {
+          continue;
+        }
+        
+        // If previous is placeholder (no requestId) and current has real requestId, upgrade
+        const prevHasReq = Boolean(prev.requestId && prev.requestId !== '');
+        if (!prevHasReq && hasReqId) {
+          byId.set(key, { ...prev, ...b });
+          continue;
+        }
+        
+        if (rank(b.status) > rank(prev.status)) {
           byId.set(key, { ...prev, ...b });
         } else if (rank(b.status) === rank(prev.status)) {
           byId.set(key, {
@@ -622,7 +633,12 @@ export default function MyNFTs() {
         revealTime: 0,
       };
 
-      setBattleList(prev => [...prev, newBattle]);
+      setBattleList(prev => {
+        // avoid duplicate initiating if user double clicks
+        const exists = prev.some(b => b.attackerTokenId === tokenId && b.status === 'initiating');
+        if (exists) return prev;
+        return [...prev, newBattle];
+      });
 
       const signer = await provider.getSigner();
       const nftContract = new ethers.Contract(
@@ -660,19 +676,22 @@ export default function MyNFTs() {
         const defenderId = Number(parsed?.args[2]);
         const revealTime = Number(parsed?.args[3]);
 
-        setBattleList(prev => 
-          prev.map(b => 
-            b.attackerTokenId === tokenId && b.status === 'initiating'
-              ? {
-                  requestId,
-                  attackerTokenId: tokenId,
-                  defenderTokenId: defenderId,
-                  status: 'waiting' as const,
-                  revealTime,
-                }
-              : b
-          )
-        );
+        setBattleList(prev => {
+          // first remove any initiating placeholders for this attacker to prevent duplicates
+          const filtered = prev.filter(b => !(b.attackerTokenId === tokenId && b.status === 'initiating'));
+          // then remove any existing records with same requestId to dedupe
+          const deduped = filtered.filter(b => b.requestId !== requestId);
+          return [
+            ...deduped,
+            {
+              requestId,
+              attackerTokenId: tokenId,
+              defenderTokenId: defenderId,
+              status: 'waiting' as const,
+              revealTime,
+            }
+          ];
+        });
 
         showNotification(`Battle initiated! Opponent #${defenderId}`, 'success');
       }
