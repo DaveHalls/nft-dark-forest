@@ -515,45 +515,24 @@ export default function MyNFTs() {
         }
       }
 
-      // merge and dedupe; prefer completed > revealing > waiting > initiating
-      const merged = [...battles, ...cachedBattles];
-      const byId = new Map<string, BattleInfo>();
+  
       const rank = (s: BattleInfo['status']) => (s === 'completed' ? 3 : s === 'revealing' ? 2 : s === 'waiting' ? 1 : 0);
-      
-      for (const b of merged) {
-        const hasReqId = Boolean(b.requestId && b.requestId !== '');
-        const reqKey = hasReqId ? b.requestId : '';
-        const attackerKey = `attacker-${b.attackerTokenId}`;
 
-        // If we now have a real requestId, collapse any existing attacker placeholder
-        if (hasReqId && byId.has(attackerKey)) {
-          const prevPlaceholder = byId.get(attackerKey)!;
-          // Merge placeholder details into the real record using rank
-          const base = rank(b.status) >= rank(prevPlaceholder.status) ? b : prevPlaceholder;
-          const overlay = rank(b.status) >= rank(prevPlaceholder.status) ? prevPlaceholder : b;
-          const mergedRecord: BattleInfo = {
-            ...base,
-            reasonCode: base.reasonCode ?? overlay.reasonCode,
-            faster: base.faster ?? overlay.faster,
-            attackerCrit: base.attackerCrit ?? overlay.attackerCrit,
-            defenderCrit: base.defenderCrit ?? overlay.defenderCrit,
-          };
-          byId.delete(attackerKey);
-          byId.set(reqKey, mergedRecord);
-          continue;
-        }
+      const merged = [...battles, ...cachedBattles];
+      const withReqId = merged.filter(b => b.requestId && b.requestId !== '');
+      const withoutReqId = merged.filter(b => !b.requestId || b.requestId === '');
 
-        const key = hasReqId ? reqKey : attackerKey;
-        const prev = byId.get(key);
+
+      const byReqId = new Map<string, BattleInfo>();
+      for (const b of withReqId) {
+        const key = b.requestId as string;
+        const prev = byReqId.get(key);
         if (!prev) {
-          byId.set(key, b);
-          continue;
-        }
-
-        if (rank(b.status) > rank(prev.status)) {
-          byId.set(key, { ...prev, ...b });
+          byReqId.set(key, b);
+        } else if (rank(b.status) > rank(prev.status)) {
+          byReqId.set(key, { ...prev, ...b });
         } else if (rank(b.status) === rank(prev.status)) {
-          byId.set(key, {
+          byReqId.set(key, {
             ...prev,
             ...b,
             reasonCode: b.reasonCode ?? prev.reasonCode,
@@ -563,8 +542,26 @@ export default function MyNFTs() {
           });
         }
       }
-      
-      const allBattles = Array.from(byId.values());
+
+      const attackerHasReal = new Set<number>();
+      for (const v of byReqId.values()) attackerHasReal.add(v.attackerTokenId);
+
+      const placeholders: BattleInfo[] = [];
+      for (const b of withoutReqId) {
+        if (!attackerHasReal.has(b.attackerTokenId)) {
+          const existed = placeholders.find(p => p.attackerTokenId === b.attackerTokenId);
+          if (!existed || rank(b.status) > rank(existed.status)) {
+            if (existed) {
+              const idx = placeholders.indexOf(existed);
+              placeholders[idx] = b;
+            } else {
+              placeholders.push(b);
+            }
+          }
+        }
+      }
+
+      const allBattles = [...Array.from(byReqId.values()), ...placeholders];
       
       for (const battle of allBattles) {
         if (battle.status === 'completed' && battle.reasonCode === undefined) {
