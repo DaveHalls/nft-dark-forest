@@ -45,6 +45,9 @@ const HERO_CLASSES = [
 
 const ATTR_NAMES = ['Attack', 'Defense', 'HP', 'Speed', 'Luck'];
 
+// Overlap scan to resist small chain reorgs
+const REORG_BUFFER = 64;
+
 export default function TrainingSection() {
   const { provider, address, isConnected, chainId } = useWalletContext();
   const { showNotification } = useNotificationContext();
@@ -217,7 +220,7 @@ export default function TrainingSection() {
           if (cachedEvents && lastBlock !== null && lastBlock !== undefined) {
             Object.assign(started, cachedEvents.started || {});
             Object.assign(finished, cachedEvents.finished || {});
-            eventFromBlock = Number(lastBlock) + 1;
+            eventFromBlock = Math.max(0, Number(lastBlock) + 1 - REORG_BUFFER);
           }
         } catch {}
 
@@ -317,7 +320,7 @@ export default function TrainingSection() {
           cachedFinishedEvents = cachedData.finished || [];
         }
         if (typeof lastBlock === 'number' && !Number.isNaN(lastBlock)) {
-          fromBlock = Math.max(Number(lastBlock) + 1, 0);
+          fromBlock = Math.max(Number(lastBlock) + 1 - REORG_BUFFER, 0);
         }
       } catch {}
       
