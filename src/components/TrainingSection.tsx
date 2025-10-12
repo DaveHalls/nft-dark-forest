@@ -93,10 +93,8 @@ export default function TrainingSection() {
       } catch {}
     };
     initOffset();
-    const iv = setInterval(initOffset, 5000);
     return () => {
       cancelled = true;
-      clearInterval(iv);
     };
   }, [provider]);
 
@@ -639,6 +637,34 @@ export default function TrainingSection() {
       showNotification('Training start transaction submitted', 'info');
       await tx.wait();
       showNotification('Training started! Can be completed in 1 minute', 'success');
+
+      try {
+        const st2 = await nft.getUpgradeState(tokenId);
+        const inProgress2 = Boolean(st2.inProgress ?? st2[0]);
+        if (inProgress2) {
+          const comp2 = Number(st2.completeAt ?? st2[1] ?? 0);
+          const attr2 = Number(st2.pendingAttr ?? st2[2] ?? 0);
+          const now2 = Math.floor(Date.now() / 1000);
+          const info = owned.find(n => n.tokenId === tokenId);
+          if (info) {
+            setTrainingRecords(prev => {
+              const exists = prev.some(r => r.tokenId === tokenId && r.attrIndex === attr2 && r.status === 'training');
+              if (exists) return prev;
+              const newRecord: TrainingRecord = {
+                tokenId,
+                className: info.className,
+                imageUrl: info.imageUrl,
+                attrIndex: attr2,
+                attrName: ATTR_NAMES[attr2],
+                status: 'training',
+                startTime: now2,
+                remaining: Math.max(0, comp2 - now2),
+              };
+              return [newRecord, ...prev];
+            });
+          }
+        }
+      } catch {}
       await loadUpgradeState(tokenId);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -726,8 +752,9 @@ export default function TrainingSection() {
     const owner = owned.find(n => n.tokenId === record.tokenId);
     const completeAt = owner?.upgradeCompleteAt || 0;
     const nowChain = Math.floor(Date.now() / 1000) + chainTimeOffset;
+    const trainingRemaining = completeAt ? Math.max(0, completeAt - nowChain) : Math.max(0, (record.remaining || 0));
     const postBufferRemaining = completeAt ? Math.max(0, completeAt + 5 - nowChain) : 0;
-    const canFinish = record.status === 'training' && (record.remaining || 0) <= 0 && postBufferRemaining <= 0;
+    const canFinish = record.status === 'training' && trainingRemaining <= 0 && postBufferRemaining <= 0;
     const isThisFinishing = finishingTokens.has(record.tokenId);
     
     return (
@@ -744,8 +771,8 @@ export default function TrainingSection() {
 
         {record.status === 'training' && (
           <div className="text-center space-y-2">
-            <p className="text-yellow-400 font-bold text-sm">⏱️ Training {formatTime(record.remaining || 0)}</p>
-            {(record.remaining || 0) <= 0 && postBufferRemaining > 0 && (
+            <p className="text-yellow-400 font-bold text-sm">⏱️ Training {formatTime(trainingRemaining)}</p>
+            {trainingRemaining <= 0 && postBufferRemaining > 0 && (
               <p className="text-xs text-yellow-400">Finalizing {postBufferRemaining}s</p>
             )}
             {canFinish ? (
