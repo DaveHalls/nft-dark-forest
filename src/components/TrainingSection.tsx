@@ -310,12 +310,15 @@ export default function TrainingSection() {
           cachedStartedEvents = parsed.started || [];
           cachedFinishedEvents = parsed.finished || [];
 
-          fromBlock = Math.max(parseInt(lastBlock) - 1, 0);
+          const last = parseInt(lastBlock);
+          if (!Number.isNaN(last)) {
+            fromBlock = Math.max(last + 1, 0);
+          }
         }
       } catch {}
       
-      const startedEvents: TrainingEvent[] = [...cachedStartedEvents];
-      const finishedEvents: TrainingEvent[] = [...cachedFinishedEvents];
+      let startedEvents: TrainingEvent[] = [...cachedStartedEvents];
+      let finishedEvents: TrainingEvent[] = [...cachedFinishedEvents];
       
       let upStartEvents, upFinishEvents;
       try {
@@ -388,38 +391,70 @@ export default function TrainingSection() {
         } catch {}
       }
       
-      // dedupe by tokenId-attrIndex with most recent blockNumber
-      
+      // strict dedupe by tokenId-attrIndex-blockNumber to avoid accumulating duplicates from cache + fresh queries
+      const startedMap = new Map<string, TrainingEvent>();
+      for (const e of startedEvents) {
+        const k = `${e.tokenId}-${e.attrIndex}-${e.blockNumber}`;
+        startedMap.set(k, e);
+      }
+      startedEvents = Array.from(startedMap.values());
 
+      const finishedMap = new Map<string, TrainingEvent>();
+      for (const e of finishedEvents) {
+        const k = `${e.tokenId}-${e.attrIndex}-${e.blockNumber}`;
+        finishedMap.set(k, e);
+      }
+      finishedEvents = Array.from(finishedMap.values());
+
+      // Build records by matching nearest future finished event per tokenId-attrIndex
       const records: TrainingRecord[] = [];
-      
+      const finishedByKey = new Map<string, TrainingEvent[]>();
+      for (const f of finishedEvents) {
+        const key = `${f.tokenId}-${f.attrIndex}`;
+        const arr = finishedByKey.get(key) || [];
+        arr.push(f);
+        finishedByKey.set(key, arr);
+      }
+      for (const [k, arr] of finishedByKey) {
+        arr.sort((a, b) => a.blockNumber - b.blockNumber);
+      }
+
+      startedEvents.sort((a, b) => a.blockNumber - b.blockNumber);
+
+      const usedFinished = new Set<string>();
+
       for (const started of startedEvents) {
         const nftInfo = nftList.find(n => n.tokenId === started.tokenId);
         if (!nftInfo) continue;
-        
-        const matchedFinished = finishedEvents.find(
-          f => f.tokenId === started.tokenId && 
-               f.attrIndex === started.attrIndex && 
-               f.blockNumber > started.blockNumber &&
-               f.timestamp >= started.timestamp
-        );
-        
-        if (matchedFinished) {
+
+        const key = `${started.tokenId}-${started.attrIndex}`;
+        const candidates = finishedByKey.get(key) || [];
+        let matched: TrainingEvent | undefined;
+        for (const c of candidates) {
+          const ck = `${c.tokenId}-${c.attrIndex}-${c.blockNumber}`;
+          if (usedFinished.has(ck)) continue;
+          if (c.blockNumber >= started.blockNumber) {
+            matched = c;
+            usedFinished.add(ck);
+            break;
+          }
+        }
+
+        if (matched) {
           records.push({
             tokenId: started.tokenId,
             className: nftInfo.className,
             imageUrl: nftInfo.imageUrl,
             attrIndex: started.attrIndex,
             attrName: ATTR_NAMES[started.attrIndex],
-            status: matchedFinished.success ? 'success' : 'failure',
+            status: matched.success ? 'success' : 'failure',
             startTime: started.timestamp,
-            completeTime: matchedFinished.timestamp,
+            completeTime: matched.timestamp,
             remaining: 0,
           });
         } else {
           const now = Math.floor(Date.now() / 1000);
           const remaining = Math.max(0, (started.completeAt || 0) - now);
-          
           records.push({
             tokenId: started.tokenId,
             className: nftInfo.className,
@@ -442,9 +477,8 @@ export default function TrainingSection() {
           finished: finishedEvents
         }));
         const maxBlock = Math.max(
-          ...startedEvents.map(e => e.blockNumber),
-          ...finishedEvents.map(e => e.blockNumber),
-          0
+          ...(startedEvents.length ? startedEvents.map(e => e.blockNumber) : [0]),
+          ...(finishedEvents.length ? finishedEvents.map(e => e.blockNumber) : [0])
         );
         localStorage.setItem(lastBlockKey, String(maxBlock || currentBlock));
       } catch {}
