@@ -9,6 +9,7 @@ import { useNotificationContext } from '@/contexts/NotificationContext';
 import { ipfsToHttp } from '@/config/ipfs';
 import NFTDetailModal from './NFTDetailModal';
 import { isNetworkSwitchError } from '@/utils/errorHandler';
+import { makeKey, getJSON, setJSON, remove as removeCache } from '@/lib/cache';
 
 interface OwnedNFT {
   tokenId: number;
@@ -45,7 +46,7 @@ const HERO_CLASSES = [
 const ATTR_NAMES = ['Attack', 'Defense', 'HP', 'Speed', 'Luck'];
 
 export default function TrainingSection() {
-  const { provider, address, isConnected } = useWalletContext();
+  const { provider, address, isConnected, chainId } = useWalletContext();
   const { showNotification } = useNotificationContext();
   const [isLoading, setIsLoading] = useState(false);
   const [chainTimeOffset, setChainTimeOffset] = useState(0);
@@ -59,6 +60,7 @@ export default function TrainingSection() {
   const [isOperatorApproved, setIsOperatorApproved] = useState(false);
   const lastLoadAddressRef = useRef<string | null>(null);
   const lastLoadTimeRef = useRef<number>(0);
+  const scopedKey = (...parts: Array<string | number>) => makeKey(['training', chainId || 'na', address || 'na', CONTRACT_ADDRESSES.NFT_DARK_FOREST, ...parts]);
   const [isInfoExpanded, setIsInfoExpanded] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('trainingInfoExpanded');
@@ -115,6 +117,11 @@ export default function TrainingSection() {
     
     try {
       setIsLoading(true);
+      const ownedCacheKey = scopedKey('owned');
+      const cachedOwned = getJSON<OwnedNFT[]>(ownedCacheKey);
+      if (!force && cachedOwned && cachedOwned.length && owned.length === 0) {
+        setOwned(cachedOwned);
+      }
       const nft = new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, provider);
       
       const currentBlock = await provider.getBlockNumber();
@@ -199,19 +206,18 @@ export default function TrainingSection() {
         const started: Record<number, { completeAt: number; blockNumber: number }> = {};
         const finished: Record<number, number> = {};
 
-        const cacheKey = `upgradeEvents_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
-        const lastBlockKey = `lastUpgradeEventBlock_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
+        const cacheKey = scopedKey('upgradeEvents');
+        const lastBlockKey = scopedKey('upgradeLastBlock');
         
         let eventFromBlock = fromBlock;
         
         try {
-          const cachedData = localStorage.getItem(cacheKey);
-          const lastBlock = localStorage.getItem(lastBlockKey);
-          if (cachedData && lastBlock) {
-            const parsed = JSON.parse(cachedData);
-            Object.assign(started, parsed.started || {});
-            Object.assign(finished, parsed.finished || {});
-            eventFromBlock = parseInt(lastBlock) + 1;
+          const cachedEvents = getJSON<{ started: Record<number, { completeAt: number; blockNumber: number }>; finished: Record<number, number> }>(cacheKey);
+          const lastBlock = getJSON<number>(lastBlockKey);
+          if (cachedEvents && lastBlock !== null && lastBlock !== undefined) {
+            Object.assign(started, cachedEvents.started || {});
+            Object.assign(finished, cachedEvents.finished || {});
+            eventFromBlock = Number(lastBlock) + 1;
           }
         } catch {}
 
@@ -257,12 +263,13 @@ export default function TrainingSection() {
         });
         
         try {
-          localStorage.setItem(cacheKey, JSON.stringify({ started, finished }));
-          localStorage.setItem(lastBlockKey, currentBlock.toString());
+          setJSON(cacheKey, { started, finished }, 86400);
+          setJSON(lastBlockKey, currentBlock, 86400);
         } catch {}
       } catch {}
 
       setOwned(list);
+      try { setJSON(ownedCacheKey, list, 300); } catch {}
       
       await loadTrainingHistory(list);
       
@@ -295,31 +302,88 @@ export default function TrainingSection() {
       }
       
       const currentBlock = await provider.getBlockNumber();
-      const cacheKey = `trainingHistory_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
-      const lastBlockKey = `lastTrainingBlock_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
+      const cacheKey = scopedKey('history');
+      const lastBlockKey = scopedKey('historyLastBlock');
       
       let cachedStartedEvents: TrainingEvent[] = [];
       let cachedFinishedEvents: TrainingEvent[] = [];
       let fromBlock = Math.max(0, currentBlock - 50000);
       
       try {
-        const cachedData = localStorage.getItem(cacheKey);
-        const lastBlock = localStorage.getItem(lastBlockKey);
-        if (cachedData && lastBlock) {
-          const parsed = JSON.parse(cachedData);
-          cachedStartedEvents = parsed.started || [];
-          cachedFinishedEvents = parsed.finished || [];
-
-          const last = parseInt(lastBlock);
-          if (!Number.isNaN(last)) {
-            fromBlock = Math.max(last + 1, 0);
-          }
+        const cachedData = getJSON<{ started: TrainingEvent[]; finished: TrainingEvent[] }>(cacheKey);
+        const lastBlock = getJSON<number>(lastBlockKey);
+        if (cachedData) {
+          cachedStartedEvents = cachedData.started || [];
+          cachedFinishedEvents = cachedData.finished || [];
+        }
+        if (typeof lastBlock === 'number' && !Number.isNaN(lastBlock)) {
+          fromBlock = Math.max(Number(lastBlock) + 1, 0);
         }
       } catch {}
       
       let startedEvents: TrainingEvent[] = [...cachedStartedEvents];
       let finishedEvents: TrainingEvent[] = [...cachedFinishedEvents];
       
+      const computeRecords = (started: TrainingEvent[], finished: TrainingEvent[]): TrainingRecord[] => {
+        const records: TrainingRecord[] = [];
+        const finishedByKey = new Map<string, TrainingEvent[]>();
+        for (const f of finished) {
+          const key = `${f.tokenId}-${f.attrIndex}`;
+          const arr = finishedByKey.get(key) || [];
+          arr.push(f);
+          finishedByKey.set(key, arr);
+        }
+        for (const [k, arr] of finishedByKey) {
+          arr.sort((a, b) => a.blockNumber - b.blockNumber);
+        }
+        started.sort((a, b) => a.blockNumber - b.blockNumber);
+        const usedFinished = new Set<string>();
+        for (const s of started) {
+          const nftInfo = nftList.find(n => n.tokenId === s.tokenId);
+          if (!nftInfo) continue;
+          const key = `${s.tokenId}-${s.attrIndex}`;
+          const candidates = finishedByKey.get(key) || [];
+          let matched: TrainingEvent | undefined;
+          for (const c of candidates) {
+            const ck = `${c.tokenId}-${c.attrIndex}-${c.blockNumber}`;
+            if (usedFinished.has(ck)) continue;
+            if (c.blockNumber >= s.blockNumber) {
+              matched = c;
+              usedFinished.add(ck);
+              break;
+            }
+          }
+          if (matched) {
+            records.push({
+              tokenId: s.tokenId,
+              className: nftInfo.className,
+              imageUrl: nftInfo.imageUrl,
+              attrIndex: s.attrIndex,
+              attrName: ATTR_NAMES[s.attrIndex],
+              status: matched.success ? 'success' : 'failure',
+              startTime: s.timestamp,
+              completeTime: matched.timestamp,
+              remaining: 0,
+            });
+          } else {
+            const now = Math.floor(Date.now() / 1000);
+            const remaining = Math.max(0, (s.completeAt || 0) - now);
+            records.push({
+              tokenId: s.tokenId,
+              className: nftList.find(n => n.tokenId === s.tokenId)!.className,
+              imageUrl: nftList.find(n => n.tokenId === s.tokenId)!.imageUrl,
+              attrIndex: s.attrIndex,
+              attrName: ATTR_NAMES[s.attrIndex],
+              status: 'training',
+              startTime: s.timestamp,
+              remaining,
+            });
+          }
+        }
+        records.sort((a, b) => (b.completeTime || b.startTime) - (a.completeTime || a.startTime));
+        return records;
+      };
+
       let upStartEvents, upFinishEvents;
       try {
         [upStartEvents, upFinishEvents] = await Promise.all([
@@ -329,8 +393,11 @@ export default function TrainingSection() {
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         if (errorMessage.includes('rate limit') || errorMessage.includes('429') || errorMessage.includes('Too Many Requests')) {
-          console.warn('RPC rate limit reached, using cached training history');
-          setTrainingRecords([]);
+          const cached = getJSON<{ started: TrainingEvent[]; finished: TrainingEvent[] }>(cacheKey);
+          if (cached) {
+            const rec = computeRecords([...(cached.started || [])], [...(cached.finished || [])]);
+            setTrainingRecords(rec);
+          }
           return;
         }
         throw err;
@@ -391,7 +458,6 @@ export default function TrainingSection() {
         } catch {}
       }
       
-      // strict dedupe by tokenId-attrIndex-blockNumber to avoid accumulating duplicates from cache + fresh queries
       const startedMap = new Map<string, TrainingEvent>();
       for (const e of startedEvents) {
         const k = `${e.tokenId}-${e.attrIndex}-${e.blockNumber}`;
@@ -406,81 +472,19 @@ export default function TrainingSection() {
       }
       finishedEvents = Array.from(finishedMap.values());
 
-      // Build records by matching nearest future finished event per tokenId-attrIndex
-      const records: TrainingRecord[] = [];
-      const finishedByKey = new Map<string, TrainingEvent[]>();
-      for (const f of finishedEvents) {
-        const key = `${f.tokenId}-${f.attrIndex}`;
-        const arr = finishedByKey.get(key) || [];
-        arr.push(f);
-        finishedByKey.set(key, arr);
-      }
-      for (const [k, arr] of finishedByKey) {
-        arr.sort((a, b) => a.blockNumber - b.blockNumber);
-      }
-
-      startedEvents.sort((a, b) => a.blockNumber - b.blockNumber);
-
-      const usedFinished = new Set<string>();
-
-      for (const started of startedEvents) {
-        const nftInfo = nftList.find(n => n.tokenId === started.tokenId);
-        if (!nftInfo) continue;
-
-        const key = `${started.tokenId}-${started.attrIndex}`;
-        const candidates = finishedByKey.get(key) || [];
-        let matched: TrainingEvent | undefined;
-        for (const c of candidates) {
-          const ck = `${c.tokenId}-${c.attrIndex}-${c.blockNumber}`;
-          if (usedFinished.has(ck)) continue;
-          if (c.blockNumber >= started.blockNumber) {
-            matched = c;
-            usedFinished.add(ck);
-            break;
-          }
-        }
-
-        if (matched) {
-          records.push({
-            tokenId: started.tokenId,
-            className: nftInfo.className,
-            imageUrl: nftInfo.imageUrl,
-            attrIndex: started.attrIndex,
-            attrName: ATTR_NAMES[started.attrIndex],
-            status: matched.success ? 'success' : 'failure',
-            startTime: started.timestamp,
-            completeTime: matched.timestamp,
-            remaining: 0,
-          });
-        } else {
-          const now = Math.floor(Date.now() / 1000);
-          const remaining = Math.max(0, (started.completeAt || 0) - now);
-          records.push({
-            tokenId: started.tokenId,
-            className: nftInfo.className,
-            imageUrl: nftInfo.imageUrl,
-            attrIndex: started.attrIndex,
-            attrName: ATTR_NAMES[started.attrIndex],
-            status: 'training',
-            startTime: started.timestamp,
-            remaining,
-          });
-        }
-      }
-      
-      records.sort((a, b) => (b.completeTime || b.startTime) - (a.completeTime || a.startTime));
+      const records = computeRecords(startedEvents, finishedEvents);
       setTrainingRecords(records);
       
       try {
-        localStorage.setItem(cacheKey, JSON.stringify({
+        setJSON(cacheKey, {
           started: startedEvents,
           finished: finishedEvents
-        }));
+        }, 86400);
         const maxBlock = Math.max(
           ...(startedEvents.length ? startedEvents.map(e => e.blockNumber) : [0]),
           ...(finishedEvents.length ? finishedEvents.map(e => e.blockNumber) : [0])
         );
-        localStorage.setItem(lastBlockKey, String(maxBlock || currentBlock));
+        setJSON(lastBlockKey, Number(maxBlock || currentBlock), 86400);
       } catch {}
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : String(e);
@@ -515,8 +519,8 @@ export default function TrainingSection() {
         nftInfo = prev.find(n => n.tokenId === t);
 
         try {
-          const cacheKey = `ownedNFTsCache_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
-          localStorage.setItem(cacheKey, JSON.stringify(updated));
+          const ownedCacheKey = scopedKey('owned');
+          setJSON(ownedCacheKey, updated, 300);
         } catch (err) {
           console.warn('Failed to update owned NFTs cache:', err);
         }
@@ -556,10 +560,9 @@ export default function TrainingSection() {
           upgradeCompleteAt: null,
         } : n);
 
-        // Sync to localStorage cache immediately
         try {
-          const cacheKey = `ownedNFTsCache_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
-          localStorage.setItem(cacheKey, JSON.stringify(updated));
+          const ownedCacheKey = scopedKey('owned');
+          setJSON(ownedCacheKey, updated, 300);
         } catch (err) {
           console.warn('Failed to update owned NFTs cache:', err);
         }
@@ -633,10 +636,9 @@ export default function TrainingSection() {
             upgradeCompleteAt: null,
           } : n);
 
-          // Sync to localStorage cache immediately
           try {
-            const cacheKey = `ownedNFTsCache_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
-            localStorage.setItem(cacheKey, JSON.stringify(updated));
+            const ownedCacheKey = scopedKey('owned');
+            setJSON(ownedCacheKey, updated, 300);
           } catch (err) {
             console.warn('Failed to update owned NFTs cache:', err);
           }
@@ -902,10 +904,11 @@ export default function TrainingSection() {
             <h3 className="text-xl font-bold text-gray-200">Training Records</h3>
             <button 
               onClick={() => {
-                const cacheKey = `trainingHistory_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
-                const lastBlockKey = `lastTrainingBlock_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
-                localStorage.removeItem(cacheKey);
-                localStorage.removeItem(lastBlockKey);
+                removeCache(scopedKey('history'));
+                removeCache(scopedKey('historyLastBlock'));
+                removeCache(scopedKey('upgradeEvents'));
+                removeCache(scopedKey('upgradeLastBlock'));
+                removeCache(scopedKey('owned'));
                 loadOwned(true);
                 showNotification('Cache cleared, reloading', 'info');
               }}

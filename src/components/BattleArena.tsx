@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { ethers } from 'ethers';
 import Image from 'next/image';
 import { useWalletContext } from '@/contexts/WalletContext';
 import { CONTRACT_ADDRESSES, DarkForestNFTABI } from '@/config';
 import { ipfsToHttp } from '@/config/ipfs';
+import { makeKey, getJSON, setJSON, remove as removeCache } from '@/lib/cache';
 
 export interface BattleInfo {
   requestId: string;
@@ -42,13 +43,21 @@ interface BattleArenaProps {
 }
 
 export default function BattleArena({ battleList, nftList, onBattleUpdate, onBattleRemove, onBattleComplete, onClearCache, isLoading }: BattleArenaProps) {
-  const { provider } = useWalletContext();
+  const { provider, chainId, address } = useWalletContext();
   const [countdowns, setCountdowns] = useState<Record<string, number>>({});
   const [bufferCountdowns, setBufferCountdowns] = useState<Record<string, number>>({});
   const [externalNFTs, setExternalNFTs] = useState<Record<number, NFTInfo>>({});
   const [activeTab, setActiveTab] = useState<'ongoing' | 'completed_win' | 'completed_loss'>('ongoing');
   const completedOnce = useRef<Set<string>>(new Set());
   const revealedOnce = useRef<Set<string>>(new Set());
+  const scopedKey = useCallback((...parts: Array<string | number>) => makeKey(['battle', chainId || 'na', address || 'na', CONTRACT_ADDRESSES.NFT_DARK_FOREST, ...parts]), [chainId, address]);
+
+  useEffect(() => {
+    const seenCompleted = getJSON<string[]>(scopedKey('seenCompleted')) || [];
+    const seenRevealed = getJSON<string[]>(scopedKey('seenRevealed')) || [];
+    completedOnce.current = new Set(seenCompleted);
+    revealedOnce.current = new Set(seenRevealed);
+  }, [chainId, address, scopedKey]);
 
   const getNFTInfo = (tokenId: number): NFTInfo | undefined => {
     return nftList.find(nft => nft.tokenId === tokenId) || externalNFTs[tokenId];
@@ -65,6 +74,18 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
       if (externalTokenIds.length === 0) return;
 
       try {
+        const metaKey = scopedKey('nftMeta');
+        const cachedMeta = getJSON<Record<number, NFTInfo>>(metaKey) || {};
+        const fromCache: Record<number, NFTInfo> = {};
+        const missing: number[] = [];
+        for (const tokenId of externalTokenIds) {
+          const hit = cachedMeta[tokenId];
+          if (hit) fromCache[tokenId] = hit; else missing.push(tokenId);
+        }
+        if (Object.keys(fromCache).length) {
+          setExternalNFTs(prev => ({ ...prev, ...fromCache }));
+        }
+        if (missing.length === 0) return;
         const nftContract = new ethers.Contract(
           CONTRACT_ADDRESSES.NFT_DARK_FOREST,
           DarkForestNFTABI,
@@ -81,7 +102,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
 
         const newExternalNFTs: Record<number, NFTInfo> = {};
 
-        for (const tokenId of externalTokenIds) {
+        for (const tokenId of missing) {
           const classIdBigInt = await nftContract.getClassId(tokenId);
           const classId = Number(classIdBigInt);
           const heroClass = HERO_CLASSES[classId];
@@ -105,13 +126,15 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
         }
 
         setExternalNFTs(prev => ({ ...prev, ...newExternalNFTs }));
+        const merged = { ...(cachedMeta || {}), ...newExternalNFTs };
+        setJSON(metaKey, merged, 600);
       } catch (error) {
         console.error('Failed to load external NFT info:', error);
       }
     };
 
     loadExternalNFTs();
-  }, [battleList, nftList, provider]);
+  }, [battleList, nftList, provider, scopedKey]);
 
   useEffect(() => {
     const waitingBattles = battleList.filter(b => b.status === 'waiting');
@@ -157,7 +180,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
     const interval = setInterval(updateCountdowns, 1000);
 
     return () => clearInterval(interval);
-  }, [battleList, provider]);
+  }, [battleList, provider, scopedKey]);
 
   // Poll revealing battles to avoid relying solely on events
   useEffect(() => {
@@ -184,12 +207,14 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
             const result = attackerWins ? 'win' : 'loss';
             if (!completedOnce.current.has(b.requestId)) {
               completedOnce.current.add(b.requestId);
+              try { setJSON(scopedKey('seenCompleted'), Array.from(completedOnce.current), 86400); } catch {}
               console.log(`Poll detected battle ${b.requestId} completed, result: ${result}`);
               onBattleUpdate(b.requestId, { status: 'completed', result, error: undefined });
               if (onBattleComplete) onBattleComplete();
             }
           } else if (isRevealed && b.status !== 'revealing' && !revealedOnce.current.has(b.requestId)) {
             revealedOnce.current.add(b.requestId);
+            try { setJSON(scopedKey('seenRevealed'), Array.from(revealedOnce.current), 86400); } catch {}
             onBattleUpdate(b.requestId, { status: 'revealing' });
           }
         } catch (err) {
@@ -209,7 +234,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
       stopped = true;
       clearInterval(handle);
     };
-  }, [battleList, provider, onBattleComplete, onBattleUpdate]);
+  }, [battleList, provider, onBattleComplete, onBattleUpdate, scopedKey]);
 
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -287,6 +312,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
 
         if (!completedOnce.current.has(battle.requestId)) {
           completedOnce.current.add(battle.requestId);
+          try { setJSON(scopedKey('seenCompleted'), Array.from(completedOnce.current), 86400); } catch {}
           onBattleUpdate(battle.requestId, {
             status: 'completed',
             result,
@@ -302,6 +328,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
       // Add one-time event listener to avoid multiple triggers and memory leaks
       nftContract.once(filter, handleBattleEnded);
       revealedOnce.current.add(battle.requestId);
+      try { setJSON(scopedKey('seenRevealed'), Array.from(revealedOnce.current), 86400); } catch {}
 
       // Set timeout (prevent indefinite waiting), fallback to manual polling after timeout
       setTimeout(() => {
@@ -580,7 +607,12 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
         <h3 className="text-xl font-bold text-gray-200">Battle Info</h3>
         {onClearCache && (
           <button 
-            onClick={onClearCache}
+            onClick={() => {
+              onClearCache?.();
+              removeCache(scopedKey('nftMeta'));
+              removeCache(scopedKey('seenCompleted'));
+              removeCache(scopedKey('seenRevealed'));
+            }}
             className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-400 hover:text-gray-200 rounded transition-colors"
           >
             Clear Cache
