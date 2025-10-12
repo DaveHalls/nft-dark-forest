@@ -48,6 +48,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
   const [externalNFTs, setExternalNFTs] = useState<Record<number, NFTInfo>>({});
   const [activeTab, setActiveTab] = useState<'ongoing' | 'completed_win' | 'completed_loss'>('ongoing');
   const completedOnce = useRef<Set<string>>(new Set());
+  const revealedOnce = useRef<Set<string>>(new Set());
 
   const getNFTInfo = (tokenId: number): NFTInfo | undefined => {
     return nftList.find(nft => nft.tokenId === tokenId) || externalNFTs[tokenId];
@@ -187,8 +188,8 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
               onBattleUpdate(b.requestId, { status: 'completed', result, error: undefined });
               if (onBattleComplete) onBattleComplete();
             }
-          } else if (isRevealed && b.status !== 'revealing') {
-            console.log(`Poll detected battle ${b.requestId} revealed but not completed`);
+          } else if (isRevealed && b.status !== 'revealing' && !revealedOnce.current.has(b.requestId)) {
+            revealedOnce.current.add(b.requestId);
             onBattleUpdate(b.requestId, { status: 'revealing' });
           }
         } catch (err) {
@@ -300,6 +301,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
 
       // Add one-time event listener to avoid multiple triggers and memory leaks
       nftContract.once(filter, handleBattleEnded);
+      revealedOnce.current.add(battle.requestId);
 
       // Set timeout (prevent indefinite waiting), fallback to manual polling after timeout
       setTimeout(() => {

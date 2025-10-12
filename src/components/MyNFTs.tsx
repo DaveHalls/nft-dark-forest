@@ -522,21 +522,34 @@ export default function MyNFTs() {
       
       for (const b of merged) {
         const hasReqId = Boolean(b.requestId && b.requestId !== '');
-        const key = hasReqId ? b.requestId : `attacker-${b.attackerTokenId}`;
+        const reqKey = hasReqId ? b.requestId : '';
+        const attackerKey = `attacker-${b.attackerTokenId}`;
+
+        // If we now have a real requestId, collapse any existing attacker placeholder
+        if (hasReqId && byId.has(attackerKey)) {
+          const prevPlaceholder = byId.get(attackerKey)!;
+          // Merge placeholder details into the real record using rank
+          const base = rank(b.status) >= rank(prevPlaceholder.status) ? b : prevPlaceholder;
+          const overlay = rank(b.status) >= rank(prevPlaceholder.status) ? prevPlaceholder : b;
+          const mergedRecord: BattleInfo = {
+            ...base,
+            reasonCode: base.reasonCode ?? overlay.reasonCode,
+            faster: base.faster ?? overlay.faster,
+            attackerCrit: base.attackerCrit ?? overlay.attackerCrit,
+            defenderCrit: base.defenderCrit ?? overlay.defenderCrit,
+          };
+          byId.delete(attackerKey);
+          byId.set(reqKey, mergedRecord);
+          continue;
+        }
+
+        const key = hasReqId ? reqKey : attackerKey;
         const prev = byId.get(key);
-        
         if (!prev) {
           byId.set(key, b);
           continue;
         }
-        
-        // If previous is placeholder (no requestId) and current has real requestId, upgrade
-        const prevHasReq = Boolean(prev.requestId && prev.requestId !== '');
-        if (!prevHasReq && hasReqId) {
-          byId.set(key, { ...prev, ...b });
-          continue;
-        }
-        
+
         if (rank(b.status) > rank(prev.status)) {
           byId.set(key, { ...prev, ...b });
         } else if (rank(b.status) === rank(prev.status)) {
