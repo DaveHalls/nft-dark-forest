@@ -44,6 +44,7 @@ interface BattleArenaProps {
 export default function BattleArena({ battleList, nftList, onBattleUpdate, onBattleRemove, onBattleComplete, onClearCache, isLoading }: BattleArenaProps) {
   const { provider } = useWalletContext();
   const [countdowns, setCountdowns] = useState<Record<string, number>>({});
+  const [bufferCountdowns, setBufferCountdowns] = useState<Record<string, number>>({});
   const [externalNFTs, setExternalNFTs] = useState<Record<number, NFTInfo>>({});
   const [activeTab, setActiveTab] = useState<'ongoing' | 'completed_win' | 'completed_loss'>('ongoing');
   const completedOnce = useRef<Set<string>>(new Set());
@@ -138,13 +139,17 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
     const updateCountdowns = () => {
       const now = Math.floor(Date.now() / 1000) + timeOffset;
       const newCountdowns: Record<string, number> = {};
+      const newBufferCountdowns: Record<string, number> = {};
       
       waitingBattles.forEach(battle => {
         const remaining = Math.max(0, battle.revealTime - now);
+        const bufferRemaining = Math.max(0, battle.revealTime + 5 - now);
         newCountdowns[battle.requestId] = remaining;
+        newBufferCountdowns[battle.requestId] = bufferRemaining;
       });
       
       setCountdowns(newCountdowns);
+      setBufferCountdowns(newBufferCountdowns);
     };
 
     initTimeOffset();
@@ -356,6 +361,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
 
   const renderBattleCard = (battle: BattleInfo) => {
     const countdown = countdowns[battle.requestId] || 0;
+    const postBuffer = bufferCountdowns[battle.requestId] || 0;
     const attackerNFT = getNFTInfo(battle.attackerTokenId);
     const defenderNFT = battle.defenderTokenId > 0 ? getNFTInfo(battle.defenderTokenId) : null;
 
@@ -408,13 +414,15 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
                 <div className="text-3xl font-bold text-yellow-400 mb-2">
                   {formatTime(countdown)}
                 </div>
-                {countdown <= 0 ? (
+                {countdown <= 0 && postBuffer <= 0 ? (
                   <button
                     onClick={() => handleReveal(battle)}
                     className="px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-sm font-medium transition-colors"
                   >
                     Reveal Result
                   </button>
+                ) : countdown <= 0 && postBuffer > 0 ? (
+                  <p className="text-xs text-yellow-400">Finalizing {postBuffer}s</p>
                 ) : countdown <= 10 ? (
                   <p className="text-xs text-yellow-400">Revealing Soon</p>
                 ) : null}

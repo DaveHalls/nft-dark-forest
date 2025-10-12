@@ -48,6 +48,7 @@ export default function TrainingSection() {
   const { provider, address, isConnected } = useWalletContext();
   const { showNotification } = useNotificationContext();
   const [isLoading, setIsLoading] = useState(false);
+  const [chainTimeOffset, setChainTimeOffset] = useState(0);
   const [owned, setOwned] = useState<OwnedNFT[]>([]);
   const [startingTokens, setStartingTokens] = useState<Set<number>>(new Set());
   const [finishingTokens, setFinishingTokens] = useState<Set<number>>(new Set());
@@ -79,6 +80,25 @@ export default function TrainingSection() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, address]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const initOffset = async () => {
+      if (!provider) return;
+      try {
+        const latest = await provider.getBlock('latest');
+        const blockTime = latest?.timestamp || Math.floor(Date.now() / 1000);
+        const local = Math.floor(Date.now() / 1000);
+        if (!cancelled) setChainTimeOffset(blockTime - local);
+      } catch {}
+    };
+    initOffset();
+    const iv = setInterval(initOffset, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
+  }, [provider]);
 
   const getContract = async () => {
     if (!provider) throw new Error('Provider not ready');
@@ -652,9 +672,10 @@ export default function TrainingSection() {
       const completeAt = Number(st.completeAt ?? st[1]);
       const currentBlock = await provider!.getBlock('latest');
       const blockTimestamp = currentBlock!.timestamp;
+      const bufferUntil = completeAt + 5;
       
-      if (blockTimestamp < completeAt) {
-        const remaining = completeAt - blockTimestamp;
+      if (blockTimestamp < bufferUntil) {
+        const remaining = bufferUntil - blockTimestamp;
         showNotification(`Training not ready yet, please wait ${remaining} seconds`, 'info');
         return;
       }
@@ -702,7 +723,11 @@ export default function TrainingSection() {
   };
 
   const renderTrainingCard = (record: TrainingRecord) => {
-    const canFinish = record.status === 'training' && (record.remaining || 0) <= 0;
+    const owner = owned.find(n => n.tokenId === record.tokenId);
+    const completeAt = owner?.upgradeCompleteAt || 0;
+    const nowChain = Math.floor(Date.now() / 1000) + chainTimeOffset;
+    const postBufferRemaining = completeAt ? Math.max(0, completeAt + 5 - nowChain) : 0;
+    const canFinish = record.status === 'training' && (record.remaining || 0) <= 0 && postBufferRemaining <= 0;
     const isThisFinishing = finishingTokens.has(record.tokenId);
     
     return (
@@ -720,7 +745,10 @@ export default function TrainingSection() {
         {record.status === 'training' && (
           <div className="text-center space-y-2">
             <p className="text-yellow-400 font-bold text-sm">⏱️ Training {formatTime(record.remaining || 0)}</p>
-            {canFinish && (
+            {(record.remaining || 0) <= 0 && postBufferRemaining > 0 && (
+              <p className="text-xs text-yellow-400">Finalizing {postBufferRemaining}s</p>
+            )}
+            {canFinish ? (
               <button 
                 onClick={() => finish(record.tokenId)}
                 disabled={isThisFinishing}
@@ -728,7 +756,7 @@ export default function TrainingSection() {
               >
                 {isThisFinishing ? 'Submitting...' : 'Complete Training'}
               </button>
-            )}
+            ) : null}
           </div>
         )}
 
