@@ -7,7 +7,7 @@ import { CONTRACT_ADDRESSES, DarkForestNFTABI } from '@/config';
 import { useNotificationContext } from '@/contexts/NotificationContext';
 import HeroCard from './HeroCard';
 import { ipfsToHttp } from '@/config/ipfs';
-import { readWithFallback } from '@/lib/provider';
+import { readWithFallback, getReadOnlyProvider } from '@/lib/provider';
 
 const HERO_CLASSES = [
   {
@@ -127,29 +127,33 @@ export default function MintSection() {
       const from = await signer.getAddress();
       const encodedData = nftContract.interface.encodeFunctionData('mint', []);
       showNotification('Please confirm the mint transaction in your wallet', 'info');
-      const txHash = await (provider as unknown as { send: (method: string, params?: unknown[]) => Promise<string> }).send('eth_sendTransaction', [
+      let txHashStr = await (provider as unknown as { send: (method: string, params?: unknown[]) => Promise<string> }).send('eth_sendTransaction', [
         { from, to: CONTRACT_ADDRESSES.NFT_DARK_FOREST, data: encodedData, gas: '0x989680' },
       ]);
       let tx;
       try {
-        const receipt = await provider.waitForTransaction(txHash as string);
+        const receipt = await provider.waitForTransaction(txHashStr as string);
         if (!receipt) throw new Error('Transaction pending without receipt');
-        tx = { hash: txHash as string, wait: async () => receipt } as unknown as ethers.ContractTransactionReceipt;
+        tx = { hash: txHashStr as string, wait: async () => receipt } as unknown as ethers.ContractTransactionReceipt;
       } catch {
         if (process.env.NODE_ENV !== 'production') console.warn('[Mint] eth_sendTransaction path failed, trying contract.mint fallback');
         showNotification('Please confirm the mint transaction in your wallet', 'info');
         tx = await nftContract.mint({ gasLimit: 10_000_000n });
       }
-      showNotification('Minting transaction submitted, awaiting confirmation...', 'info');
-      if (process.env.NODE_ENV !== 'production') console.log('[Mint] tx submitted', tx?.hash);
+      txHashStr = tx?.hash || '';
+      showNotification(`Transaction submitted: ${txHashStr.slice(0, 10)}...`, 'info');
+      if (process.env.NODE_ENV !== 'production') console.log('[Mint] tx submitted', txHashStr);
 
-      const receipt = await tx.wait();
+      const stableProvider = getReadOnlyProvider();
+      const receipt = await stableProvider.waitForTransaction(txHashStr, 1);
+      
       if (!receipt) {
-        if (process.env.NODE_ENV !== 'production') console.log('[Mint] tx wait returned null (still pending)');
-        showNotification('Transaction pending... please wait', 'info');
+        if (process.env.NODE_ENV !== 'production') console.log('[Mint] tx wait returned null');
+        showNotification('Transaction submitted but not confirmed yet', 'info');
+        setIsMinting(false);
         return;
       }
-      if (process.env.NODE_ENV !== 'production') console.log('[Mint] tx confirmed', (receipt as { hash?: string }).hash);
+      if (process.env.NODE_ENV !== 'production') console.log('[Mint] tx confirmed', receipt.hash);
       
       // Reset minting state immediately after transaction confirmation
       setIsMinting(false);
