@@ -8,7 +8,7 @@ import { useWalletContext } from '@/contexts/WalletContext';
 import { useNotificationContext } from '@/contexts/NotificationContext';
 import { ipfsToHttp } from '@/config/ipfs';
 import { isNetworkSwitchError } from '@/utils/errorHandler';
-import { getReadOnlyContract } from '@/lib/provider';
+import { readWithFallback } from '@/lib/provider';
 
 interface ListingItem {
   tokenId: number;
@@ -56,20 +56,25 @@ export default function MarketSection() {
         return;
       }
       setLoading(true);
-      // Use stable public RPC for read-only queries
-      const read = getReadOnlyContract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI);
-      const market = getReadOnlyContract(CONTRACT_ADDRESSES.MARKET, DarkForestMarketABI);
-      const supply = Number(await read.totalSupply());
+      const supply = Number(await readWithFallback((p) => 
+        new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).totalSupply()
+      ));
       const list: ListingItem[] = [];
       for (let id = 1; id <= supply; id++) {
         try {
-          const res = await market.getListing(id);
+          const res = await readWithFallback((p) => 
+            new ethers.Contract(CONTRACT_ADDRESSES.MARKET, DarkForestMarketABI, p).getListing(id)
+          );
           const seller = res[0] as string;
           const price = (res[1] as bigint).toString();
           const active = Boolean(res[2]);
           if (!active) continue;
-          const classId = Number(await read.getClassId(id));
-          const name = await read.getClass(id);
+          const classId = Number(await readWithFallback((p) => 
+            new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).getClassId(id)
+          ));
+          const name = await readWithFallback((p) => 
+            new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).getClass(id)
+          );
           const imageCid = [
             'bafkreifkvbyytyqi7z66a7q2k5kzoxxc7osevdafmmbvm2mbfkiyao5nie',
             'bafkreicox4d3grjebxqv62vsq7bedpfbogx3qfmul5sxwfcp4ud6gqueui',
@@ -79,7 +84,9 @@ export default function MarketSection() {
           ][classId];
           let wins = 0, losses = 0, winRate = 0;
           try {
-            const stats = await (read as unknown as { getBattleStats?: (id: number) => Promise<unknown> }).getBattleStats?.(id);
+            const stats = await readWithFallback((p) => 
+              new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).getBattleStats(id)
+            );
             if (stats && typeof stats === 'object') {
               const statsArray = stats as Record<number, unknown> & { wins?: unknown; losses?: unknown; winRate?: unknown };
               wins = Number(statsArray[0] ?? statsArray.wins ?? 0);
@@ -90,7 +97,9 @@ export default function MarketSection() {
             }
           } catch {
             try {
-              const rec = await (read as unknown as { getBattleRecord?: (id: number) => Promise<unknown> }).getBattleRecord?.(id);
+              const rec = await readWithFallback((p) => 
+                new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).getBattleRecord(id)
+              );
               if (rec && typeof rec === 'object') {
                 const recArray = rec as Record<number, unknown> & { wins?: unknown; losses?: unknown };
                 wins = Number(recArray[0] ?? recArray.wins ?? 0);
@@ -118,8 +127,10 @@ export default function MarketSection() {
   const handleBuy = async (tokenId: number, price: string) => {
     try {
       if (!provider) return;
+      try { await (provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }).send('eth_requestAccounts', []); } catch {}
       const signer = await provider.getSigner();
       const market = new ethers.Contract(CONTRACT_ADDRESSES.MARKET, DarkForestMarketABI, signer);
+      showNotification('Please confirm the transaction in your wallet', 'info');
       const tx = await market.buy(tokenId, { value: price });
       showNotification('Purchase transaction submitted', 'info');
       await tx.wait();
@@ -139,22 +150,24 @@ export default function MarketSection() {
     try {
       if (!provider || !address) return;
       setMyLoading(true);
-      // Use stable public RPC for read-only queries
-      const read = getReadOnlyContract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI);
       
       let myTokenIds: number[] = [];
       
       try {
-        // Use contract function to query owned NFTs (more efficient than iterating all)
-        const tokenIds = await read.tokensOfOwner(address);
+        const tokenIds = await readWithFallback((p) => 
+          new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).tokensOfOwner(address)
+        );
         myTokenIds = tokenIds.map((id: bigint) => Number(id));
       } catch {
-        // Fallback to iteration if contract method not available
         console.warn('Contract method tokensOfOwner not available, falling back to iteration');
-        const supply = Number(await read.totalSupply());
+        const supply = Number(await readWithFallback((p) => 
+          new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).totalSupply()
+        ));
         for (let id = 1; id <= supply; id++) {
           try {
-            const owner = await read.ownerOf(id);
+            const owner = await readWithFallback((p) => 
+              new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).ownerOf(id)
+            );
             if (owner.toLowerCase() === address.toLowerCase()) {
               myTokenIds.push(id);
             }
@@ -165,8 +178,12 @@ export default function MarketSection() {
       const list: MyItem[] = [];
       for (const id of myTokenIds) {
         try {
-          const classId = Number(await read.getClassId(id));
-          const name = await read.getClass(id);
+          const classId = Number(await readWithFallback((p) => 
+            new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).getClassId(id)
+          ));
+          const name = await readWithFallback((p) => 
+            new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).getClass(id)
+          );
           const imageCid = [
             'bafkreifkvbyytyqi7z66a7q2k5kzoxxc7osevdafmmbvm2mbfkiyao5nie',
             'bafkreicox4d3grjebxqv62vsq7bedpfbogx3qfmul5sxwfcp4ud6gqueui',
@@ -176,7 +193,9 @@ export default function MarketSection() {
           ][classId];
           let wins = 0, losses = 0, winRate = 0;
           try {
-            const stats = await (read as unknown as { getBattleStats?: (id: number) => Promise<unknown> }).getBattleStats?.(id);
+            const stats = await readWithFallback((p) => 
+              new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).getBattleStats(id)
+            );
             if (stats && typeof stats === 'object') {
               const statsArray = stats as Record<number, unknown> & { wins?: unknown; losses?: unknown; winRate?: unknown };
               wins = Number(statsArray[0] ?? statsArray.wins ?? 0);
@@ -187,7 +206,9 @@ export default function MarketSection() {
             }
           } catch {
             try {
-              const rec = await (read as unknown as { getBattleRecord?: (id: number) => Promise<unknown> }).getBattleRecord?.(id);
+              const rec = await readWithFallback((p) => 
+                new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).getBattleRecord(id)
+              );
               if (rec && typeof rec === 'object') {
                 const recArray = rec as Record<number, unknown> & { wins?: unknown; losses?: unknown };
                 wins = Number(recArray[0] ?? recArray.wins ?? 0);
@@ -231,16 +252,19 @@ export default function MarketSection() {
         return;
       }
       setBusy(prev => ({ ...prev, [tokenId]: true }));
+      try { await (provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }).send('eth_requestAccounts', []); } catch {}
       const signer = await provider.getSigner();
       const nft = new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, signer);
       const market = new ethers.Contract(CONTRACT_ADDRESSES.MARKET, DarkForestMarketABI, signer);
       const approved = await nft.getApproved(tokenId);
       if (approved.toLowerCase() !== CONTRACT_ADDRESSES.MARKET.toLowerCase()) {
+        showNotification('Please confirm the approval transaction in your wallet', 'info');
         const txA = await nft.approve(CONTRACT_ADDRESSES.MARKET, tokenId);
         showNotification('Market approval transaction submitted', 'info');
         await txA.wait();
       }
       const wei = ethers.parseEther(v);
+      showNotification('Please confirm the listing transaction in your wallet', 'info');
       const tx = await market.list(tokenId, wei);
       showNotification('Listing transaction submitted', 'info');
       await tx.wait();

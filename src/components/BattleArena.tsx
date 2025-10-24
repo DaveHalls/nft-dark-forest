@@ -274,10 +274,9 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
         throw new Error('This battle has already been completed');
       }
 
-      // Revealing battle and requesting decryption requires higher gas
-      const tx = await nftContract.revealBattle(BigInt(battle.requestId), {
-        gasLimit: 3000000, // 3M gas limit
-      });
+      try { await (provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }).send('eth_requestAccounts', []); } catch {}
+      try { (window as unknown as { __notify?: (msg: string, type: string) => void }).__notify?.('Please confirm the reveal transaction in your wallet', 'info'); } catch {}
+      const tx = await nftContract.revealBattle(BigInt(battle.requestId), { gasLimit: 3000000 });
       await tx.wait();
 
       console.log('Reveal request submitted, waiting for Gateway processing...');
@@ -473,6 +472,8 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
                         DarkForestNFTABI,
                         signer
                       );
+                      try { await (provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }).send('eth_requestAccounts', []); } catch {}
+                      try { (window as unknown as { __notify?: (msg: string, type: string) => void }).__notify?.("If the wallet doesn't pop up, please switch to a more stable RPC.", 'info'); } catch {}
                       const tx = await nftContract.retryReveal(BigInt(battle.requestId));
                       await tx.wait();
                     } catch (err) {

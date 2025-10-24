@@ -10,7 +10,7 @@ import BattleArena, { BattleInfo } from './BattleArena';
 import NFTDetailModal from './NFTDetailModal';
 import { ipfsToHttp } from '@/config/ipfs';
 import { isNetworkSwitchError } from '@/utils/errorHandler';
-import { getReadOnlyProvider, getReadOnlyContract } from '@/lib/provider';
+import { getReadOnlyProvider, getReadOnlyContract, readWithFallback } from '@/lib/provider';
 
 const HERO_CLASSES = [
   {
@@ -64,6 +64,7 @@ export default function MyNFTs() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedNFT, setSelectedNFT] = useState<NFTData | null>(null);
   const [battleList, setBattleList] = useState<BattleInfo[]>([]);
+  const [isBattleLoaded, setIsBattleLoaded] = useState(false);
   const [filter, setFilter] = useState<'all' | 'available' | 'unavailable'>('all');
   const lastRecoveredCountRef = useRef(0);
   const lastCheckTsRef = useRef(0);
@@ -142,6 +143,7 @@ export default function MyNFTs() {
 
     try {
       setIsLoading(true);
+      setIsBattleLoaded(false);
       
       // Use stable public RPC for read-only queries
       const nftContract = getReadOnlyContract(
@@ -152,22 +154,47 @@ export default function MyNFTs() {
       let myTokenIds: Set<number>;
 
       try {
-        const tokenIds = await nftContract.tokensOfOwner(address);
+        const tokenIds = await readWithFallback((p) => new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).tokensOfOwner(address));
         myTokenIds = new Set(tokenIds.map((id: bigint) => Number(id)));
       } catch {
         console.warn('Contract method tokensOfOwner not available, falling back to event query');
         
-        const readProvider = getReadOnlyProvider();
-        const currentBlock = await readProvider.getBlockNumber();
+        const currentBlock = await readWithFallback((p) => p.getBlockNumber());
         const fromBlock = Math.max(0, currentBlock - 50000);
 
-        const transferToFilter = nftContract.filters.Transfer(null, address);
-        const transferFromFilter = nftContract.filters.Transfer(address, null);
-        
-        const [transferToEvents, transferFromEvents] = await Promise.all([
-          nftContract.queryFilter(transferToFilter, fromBlock, 'latest'),
-          nftContract.queryFilter(transferFromFilter, fromBlock, 'latest')
-        ]);
+        const chunkSize = 1000;
+        const transferToEvents: Array<ethers.Log | ethers.EventLog> = [];
+        const transferFromEvents: Array<ethers.Log | ethers.EventLog> = [];
+        let s1 = fromBlock;
+        while (s1 <= currentBlock) {
+          let end = Math.min(s1 + chunkSize, currentBlock);
+          try {
+            const [toChunk, fromChunk] = await Promise.all([
+              readWithFallback((p) => {
+                const c = new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p);
+                return c.queryFilter(c.filters.Transfer(null, address), s1, end);
+              }),
+              readWithFallback((p) => {
+                const c = new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p);
+                return c.queryFilter(c.filters.Transfer(address, null), s1, end);
+              }),
+            ]);
+            transferToEvents.push(...toChunk);
+            transferFromEvents.push(...fromChunk);
+            s1 = end + 1;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg.includes('10 block range')) {
+              end = Math.min(s1 + 10, currentBlock);
+              continue;
+            }
+            if (msg.includes('Block range is too large') || msg.includes('-32062') || msg.includes('-32600')) {
+              end = Math.min(s1 + 10, currentBlock);
+              continue;
+            }
+            throw err;
+          }
+        }
 
         myTokenIds = new Set<number>();
         
@@ -188,12 +215,12 @@ export default function MyNFTs() {
 
       // Batch load NFT data in parallel
       const now = Math.floor(Date.now() / 1000);
-      const nftDataPromises = Array.from(myTokenIds).map(async (tokenId) => {
+      const nftDataTasks = Array.from(myTokenIds).map((tokenId) => async () => {
         try {
           const [classIdBigInt, battleRecord, upgradeState] = await Promise.all([
-            nftContract.getClassId(tokenId),
-            nftContract.getBattleRecord(tokenId).catch(() => [0, 0, 0]),
-            nftContract.getUpgradeState(tokenId).catch(() => ({ inProgress: false, completeAt: 0 }))
+            readWithFallback((p) => new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).getClassId(tokenId)),
+            readWithFallback((p) => new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).getBattleRecord(tokenId)).catch(() => [0, 0, 0]),
+            readWithFallback((p) => new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).getUpgradeState(tokenId)).catch(() => ({ inProgress: false, completeAt: 0 })),
           ]);
 
           const classId = Number(classIdBigInt);
@@ -238,7 +265,18 @@ export default function MyNFTs() {
         }
       });
 
-      const myNFTs = (await Promise.all(nftDataPromises)).filter((nft): nft is NFTData => nft !== null) as NFTData[];
+      // throttle concurrency to reduce RPC pressure
+      const results: (NFTData | null)[] = new Array(nftDataTasks.length);
+      const concurrency = 3;
+      let nextIdx = 0;
+      const runOne = async () => {
+        const i = nextIdx++;
+        if (i >= nftDataTasks.length) return;
+        results[i] = await nftDataTasks[i]();
+        await runOne();
+      };
+      await Promise.all(new Array(Math.min(concurrency, nftDataTasks.length)).fill(0).map(() => runOne()));
+      const myNFTs = results.filter((nft): nft is NFTData => nft !== null && nft !== undefined) as NFTData[];
 
       // Sync training status from upgrade events with cache
       try {
@@ -246,8 +284,7 @@ export default function MyNFTs() {
         const started: Record<number, { completeAt: number; blockNumber: number }> = {};
         const finished: Record<number, number> = {};
 
-        const readProvider = getReadOnlyProvider();
-        const currentBlock = await readProvider.getBlockNumber();
+        const currentBlock = await readWithFallback((p) => p.getBlockNumber());
         const cacheKey = `upgradeHistory_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
         const lastBlockKey = `lastUpgradeBlock_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
         
@@ -264,10 +301,36 @@ export default function MyNFTs() {
           }
         } catch {}
 
-        const [upStartEvents, upFinishEvents] = await Promise.all([
-          nftContract.queryFilter(nftContract.filters.UpgradeStarted(), eventFromBlock, 'latest'),
-          nftContract.queryFilter(nftContract.filters.UpgradeFinished(), eventFromBlock, 'latest')
-        ]);
+        const upStartEvents: Array<ethers.Log | ethers.EventLog> = [];
+        const upFinishEvents: Array<ethers.Log | ethers.EventLog> = [];
+        let s2 = eventFromBlock;
+        while (s2 <= currentBlock) {
+          const e2 = Math.min(s2 + 1000, currentBlock);
+          try {
+            const [startChunk, finishChunk] = await Promise.all([
+              readWithFallback((p) => new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).queryFilter(nftContract.filters.UpgradeStarted(), s2, e2)),
+              readWithFallback((p) => new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).queryFilter(nftContract.filters.UpgradeFinished(), s2, e2)),
+            ]);
+            upStartEvents.push(...startChunk);
+            upFinishEvents.push(...finishChunk);
+            s2 = e2 + 1;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg.includes('10 block range') || msg.includes('Block range is too large') || msg.includes('-32062') || msg.includes('-32600')) {
+              // step down to very small chunk
+              const e3 = Math.min(s2 + 10, currentBlock);
+              const [startChunk2, finishChunk2] = await Promise.all([
+                readWithFallback((p) => new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).queryFilter(nftContract.filters.UpgradeStarted(), s2, e3)),
+                readWithFallback((p) => new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).queryFilter(nftContract.filters.UpgradeFinished(), s2, e3)),
+              ]);
+              upStartEvents.push(...startChunk2);
+              upFinishEvents.push(...finishChunk2);
+              s2 = e3 + 1;
+              continue;
+            }
+            throw err;
+          }
+        }
 
         for (const ev of upStartEvents) {
           try {
@@ -316,6 +379,7 @@ export default function MyNFTs() {
         // Check for ongoing battles
         await checkPendingBattle(nftContract, myNFTs);
       }
+      setIsBattleLoaded(true);
 
     } catch (error) {
       if (isNetworkSwitchError(error)) {
@@ -360,7 +424,9 @@ export default function MyNFTs() {
 
       for (const nft of myNFTs) {
         try {
-          const requestId = await nftContract.getPendingBattleByToken(nft.tokenId);
+          const requestId = await readWithFallback((p) => 
+            new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).getPendingBattleByToken(nft.tokenId)
+          );
           
           if (requestId && requestId > 0) {
             const reqIdStr = requestId.toString();
@@ -369,7 +435,9 @@ export default function MyNFTs() {
               continue;
             }
 
-            const battleRequest = await nftContract.getBattleRequest(requestId);
+            const battleRequest = await readWithFallback((p) => 
+              new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).getBattleRequest(requestId)
+            );
           
           const isPending = battleRequest.isPending;
           const isRevealed = battleRequest.isRevealed;
@@ -401,14 +469,20 @@ export default function MyNFTs() {
             // Try to fetch battle details from BattleEnded event
             let reasonCode, faster, attackerCrit, defenderCrit;
             try {
-              const readProvider = getReadOnlyProvider();
-              const currentBlock = await readProvider.getBlockNumber();
+              const currentBlock = await readWithFallback((p) => p.getBlockNumber());
               const fromBlock = Math.max(0, currentBlock - 50000);
-              const battleEndedFilter = nftContract.filters.BattleEnded(BigInt(reqIdStr));
-              const endedEvents = await nftContract.queryFilter(battleEndedFilter, fromBlock, 'latest');
+              const endedEvents = await readWithFallback((p) => 
+                new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p)
+                  .queryFilter(
+                    new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).filters.BattleEnded(BigInt(reqIdStr)), 
+                    fromBlock, 
+                    'latest'
+                  )
+              );
               if (endedEvents.length > 0) {
                 const ev = endedEvents[0];
-                const parsed = nftContract.interface.parseLog({ topics: [...ev.topics], data: ev.data });
+                const tempContract = new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, getReadOnlyProvider());
+                const parsed = tempContract.interface.parseLog({ topics: [...ev.topics], data: ev.data });
                 if (parsed?.args) {
                   const args = parsed.args as unknown as { [key: number]: bigint | number };
                   reasonCode = Number(args[4]);
@@ -444,8 +518,7 @@ export default function MyNFTs() {
         }
       }
 
-      const readProvider = getReadOnlyProvider();
-      const battleCurrentBlock = await readProvider.getBlockNumber();
+      const battleCurrentBlock = await readWithFallback((p) => p.getBlockNumber());
       const battleLastBlockKey = `lastBattleBlock_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
       
       let battleFromBlock = Math.max(0, battleCurrentBlock - 50000);
@@ -461,8 +534,26 @@ export default function MyNFTs() {
         }
       } catch {}
       
-      const battleEndedFilter = nftContract.filters.BattleEnded();
-      const events = await nftContract.queryFilter(battleEndedFilter, battleFromBlock, 'latest');
+      const events: Array<ethers.Log | ethers.EventLog> = [];
+      let s3 = battleFromBlock;
+      while (s3 <= battleCurrentBlock) {
+        const e3 = Math.min(s3 + 1000, battleCurrentBlock);
+        try {
+          const chunkEvs = await readWithFallback((p) => new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).queryFilter(nftContract.filters.BattleEnded(), s3, e3));
+          events.push(...chunkEvs);
+          s3 = e3 + 1;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.includes('10 block range') || msg.includes('Block range is too large') || msg.includes('-32062') || msg.includes('-32600')) {
+            const e4 = Math.min(s3 + 10, battleCurrentBlock);
+            const chunkEvs2 = await readWithFallback((p) => new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).queryFilter(nftContract.filters.BattleEnded(), s3, e4));
+            events.push(...chunkEvs2);
+            s3 = e4 + 1;
+            continue;
+          }
+          throw err;
+        }
+      }
 
       for (const ev of events) {
         let requestId: bigint, winner: bigint, loser: bigint, reasonCode: number, faster: number, attackerCrit: number, defenderCrit: number;
@@ -576,11 +667,28 @@ export default function MyNFTs() {
       for (const battle of allBattles) {
         if (battle.status === 'completed' && battle.reasonCode === undefined) {
           try {
-            const readProvider = getReadOnlyProvider();
-            const currentBlock = await readProvider.getBlockNumber();
+            const currentBlock = await readWithFallback((p) => p.getBlockNumber());
             const fromBlock = Math.max(0, currentBlock - 50000);
-            const battleEndedFilter = nftContract.filters.BattleEnded(BigInt(battle.requestId));
-            const endedEvents = await nftContract.queryFilter(battleEndedFilter, fromBlock, 'latest');
+            const endedEvents: Array<ethers.Log | ethers.EventLog> = [];
+            let s4 = fromBlock;
+            while (s4 <= currentBlock) {
+              const e4 = Math.min(s4 + 1000, currentBlock);
+              try {
+                const chunkEvs = await readWithFallback((p) => new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).queryFilter(nftContract.filters.BattleEnded(BigInt(battle.requestId)), s4, e4));
+                endedEvents.push(...chunkEvs);
+                s4 = e4 + 1;
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                if (msg.includes('10 block range') || msg.includes('Block range is too large') || msg.includes('-32062') || msg.includes('-32600')) {
+                  const e5 = Math.min(s4 + 10, currentBlock);
+                  const chunkEvs2 = await readWithFallback((p) => new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).queryFilter(nftContract.filters.BattleEnded(BigInt(battle.requestId)), s4, e5));
+                  endedEvents.push(...chunkEvs2);
+                  s4 = e5 + 1;
+                  continue;
+                }
+                throw err;
+              }
+            }
             if (endedEvents.length > 0) {
               const ev = endedEvents[0];
               const parsed = nftContract.interface.parseLog({ topics: [...ev.topics], data: ev.data });
@@ -630,7 +738,7 @@ export default function MyNFTs() {
     if (!provider) return;
 
     try {
-      // Training protection
+      // Training protection (use wallet provider for consistency)
       try {
         const nftContract = new ethers.Contract(
           CONTRACT_ADDRESSES.NFT_DARK_FOREST,
@@ -660,6 +768,8 @@ export default function MyNFTs() {
         return [...prev, newBattle];
       });
 
+      try { await (provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }).send('eth_requestAccounts', []); } catch {}
+      try { await (provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }).send('eth_requestAccounts', []); } catch {}
       const signer = await provider.getSigner();
       const nftContract = new ethers.Contract(
         CONTRACT_ADDRESSES.NFT_DARK_FOREST,
@@ -668,9 +778,11 @@ export default function MyNFTs() {
       );
 
       // FHE battle calculation requires significant gas
-      const tx = await nftContract.initiateBattle(tokenId, {
-        gasLimit: 10000000, // 10M gas limit
-      });
+      const txPromise = nftContract.initiateBattle(tokenId, { gasLimit: 10000000 });
+      const timer = setTimeout(() => {
+        showNotification('Waiting for wallet confirmation...', 'info');
+      }, 15000);
+      const tx = await txPromise.finally(() => clearTimeout(timer));
       const receipt = await tx.wait();
 
       const battleInitiatedEvent = receipt.logs.find(
@@ -931,16 +1043,16 @@ export default function MyNFTs() {
                       </button>
                       <button
                         onClick={() => handleBattle(nft.tokenId)}
-                        disabled={nft.cooldownRemaining > 0 || isNFTInBattle(nft.tokenId) || nft.isUpgrading}
+                        disabled={!isBattleLoaded || nft.cooldownRemaining > 0 || isNFTInBattle(nft.tokenId) || nft.isUpgrading}
                         className={`
                           py-1 rounded text-xs font-bold transition-all
-                          ${nft.cooldownRemaining > 0 || isNFTInBattle(nft.tokenId) || nft.isUpgrading
+                          ${!isBattleLoaded || nft.cooldownRemaining > 0 || isNFTInBattle(nft.tokenId) || nft.isUpgrading
                             ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
                             : 'bg-red-600 hover:bg-red-700 text-white'
                           }
                         `}
                       >
-                        {nft.isUpgrading ? 'Training' : isNFTInBattle(nft.tokenId) ? 'In Battle' : nft.cooldownRemaining > 0 ? 'Cooldown' : 'Battle'}
+                        {!isBattleLoaded ? 'Loading...' : nft.isUpgrading ? 'Training' : isNFTInBattle(nft.tokenId) ? 'In Battle' : nft.cooldownRemaining > 0 ? 'Cooldown' : 'Battle'}
                       </button>
                     </div>
 

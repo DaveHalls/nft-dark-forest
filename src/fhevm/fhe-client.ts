@@ -6,44 +6,57 @@ async function delay(ms: number): Promise<void> {
 
 export async function initFhevm(network: unknown, chainId: number, gatewayUrl?: string, retries = 3) {
   let lastError: unknown;
-  
-  for (let attempt = 0; attempt < retries; attempt++) {
-    try {
-      if (attempt > 0) {
-        const waitTime = Math.min(1000 * Math.pow(2, attempt), 5000);
-        await delay(waitTime);
-      }
 
-      const { createInstance, SepoliaConfig } = await import('@zama-fhe/relayer-sdk/bundle');
+  // 如果传入的是逗号分隔的 RPC 字符串，这里拆分并顺序尝试
+  const splitRpcCandidates = (val: unknown): unknown[] => {
+    if (typeof val === 'string' && val.includes(',')) {
+      return val
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+    }
+    return [val];
+  };
 
-      const config = {
-        ...SepoliaConfig,
-        network,
-        chainId,
-        gatewayUrl: gatewayUrl || (SepoliaConfig as Record<string, unknown>).gatewayUrl,
-      };
+  const candidates = splitRpcCandidates(network);
 
-      fhevmInstance = await createInstance(config as never);
-
-      return fhevmInstance;
-    } catch (error) {
-      lastError = error;
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      
-      if (errorMessage.includes('Too Many Requests') || errorMessage.includes('-32005')) {
-        if (attempt < retries - 1) {
-          continue;
+  for (const candidate of candidates) {
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        if (attempt > 0) {
+          const waitTime = Math.min(1000 * Math.pow(2, attempt), 5000);
+          await delay(waitTime);
         }
-      }
-      
-      console.error(`Failed to initialize FHE instance (attempt ${attempt + 1}/${retries}):`, error);
-      
-      if (attempt === retries - 1) {
-        throw error;
+
+        const { createInstance, SepoliaConfig } = await import('@zama-fhe/relayer-sdk/bundle');
+
+        const config = {
+          ...SepoliaConfig,
+          network: candidate,
+          chainId,
+          gatewayUrl: gatewayUrl || (SepoliaConfig as Record<string, unknown>).gatewayUrl,
+        };
+
+        fhevmInstance = await createInstance(config as never);
+        return fhevmInstance;
+      } catch (error) {
+        lastError = error;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+
+        // 对速率限制做重试；其余错误按候选切换
+        if (errorMessage.includes('Too Many Requests') || errorMessage.includes('-32005')) {
+          if (attempt < retries - 1) {
+            continue;
+          }
+        }
+
+        console.error(`Failed to initialize FHE instance (attempt ${attempt + 1}/${retries}):`, error);
+        // 当前候选尝试完毕或非可重试错误，切到下一个候选
+        break;
       }
     }
   }
-  
+
   throw lastError;
 }
 

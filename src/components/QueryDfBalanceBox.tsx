@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
 import type { Eip1193Provider } from 'ethers';
 import { CONTRACT_ADDRESSES, DarkForestTokenABI, DarkForestNFTABI } from '@/config';
+import { readWithFallback } from '@/lib/provider';
 import { initFhevm, getFhevmInstance } from '@/fhevm/fhe-client';
 import { useWalletContext } from '@/contexts/WalletContext';
 import { useNotificationContext } from '@/contexts/NotificationContext';
@@ -15,7 +16,7 @@ interface FheInstance {
 }
 
 export default function QueryDfBalanceBox() {
-  const { isConnected, provider } = useWalletContext();
+  const { isConnected, provider, address } = useWalletContext();
   const { showNotification } = useNotificationContext();
   const [isLoading, setIsLoading] = useState(false);
   const [isMinting, setIsMinting] = useState(false);
@@ -53,54 +54,64 @@ export default function QueryDfBalanceBox() {
 
   const handleQuery = async () => {
     try {
+      if (process.env.NODE_ENV !== 'production') console.log('[Query] start');
       if (!isConnected) {
         showNotification('Please connect wallet first', 'info');
+        if (process.env.NODE_ENV !== 'production') console.log('[Query] not connected');
         return;
       }
       if (!CONTRACT_ADDRESSES.FHE_TOKEN || !CONTRACT_ADDRESSES.NFT_DARK_FOREST) {
         showNotification('Contract address not configured', 'error');
+        if (process.env.NODE_ENV !== 'production') console.error('[Query] missing contract address', CONTRACT_ADDRESSES);
         return;
       }
 
       setIsLoading(true);
 
-      const ethProvider = provider
-        ? provider
-        : (typeof window !== 'undefined' && (window as unknown as { ethereum?: Eip1193Provider }).ethereum
-            ? new ethers.BrowserProvider((window as unknown as { ethereum: Eip1193Provider }).ethereum as Eip1193Provider)
-            : null);
-      if (!ethProvider) {
-        showNotification('Wallet not available', 'error');
-        return;
-      }
-      const network = await ethProvider.getNetwork();
-      const signer = await ethProvider.getSigner();
-      const userAddress = await signer.getAddress();
+      const network = await readWithFallback((p) => p.getNetwork());
+      const userAddress = address
+        ? address
+        : (async () => {
+            const ep = provider
+              ? provider
+              : (typeof window !== 'undefined' && (window as unknown as { ethereum?: Eip1193Provider }).ethereum
+                  ? new ethers.BrowserProvider((window as unknown as { ethereum: Eip1193Provider }).ethereum as Eip1193Provider)
+                  : null);
+            if (!ep) throw new Error('Wallet not available');
+            const s = await ep.getSigner();
+            return s.getAddress();
+          })();
+      const resolvedUserAddress = typeof userAddress === 'string' ? userAddress : await userAddress;
+      if (process.env.NODE_ENV !== 'production') console.log('[Query] network/address', { chainId: network.chainId, userAddress: resolvedUserAddress });
 
-      const ethereum = (provider as { provider?: unknown })?.provider ?? (typeof window !== 'undefined' ? (window as { ethereum?: unknown }).ethereum : undefined);
-      const hasEip1193 = !!ethereum && typeof (ethereum as { request?: unknown }).request === 'function';
       const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL;
-      const networkArg: unknown = hasEip1193 ? ethereum : rpcUrl;
-      await initFhevm(networkArg, Number(network.chainId), CONTRACT_ADDRESSES.GATEWAY);
+      if (process.env.NODE_ENV !== 'production') console.log('[Query] initFhevm', { rpcUrl, gateway: CONTRACT_ADDRESSES.GATEWAY });
+      await initFhevm(rpcUrl, Number(network.chainId), CONTRACT_ADDRESSES.GATEWAY);
+      if (process.env.NODE_ENV !== 'production') console.log('[Query] initFhevm ok');
       const instance = getFhevmInstance();
 
-      const token = new ethers.Contract(CONTRACT_ADDRESSES.FHE_TOKEN, DarkForestTokenABI, signer);
-      const nft = new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, signer);
-
+      if (process.env.NODE_ENV !== 'production') console.log('[Query] fetching balance/pending ...');
       const [encBal, pending] = await Promise.all([
-        token.balanceOf(userAddress),
-        nft.getPendingReward(userAddress)
+        readWithFallback((p) => 
+          new ethers.Contract(CONTRACT_ADDRESSES.FHE_TOKEN, DarkForestTokenABI, p).balanceOf(resolvedUserAddress, { from: resolvedUserAddress })
+        ),
+        readWithFallback((p) => 
+          new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).getPendingReward(resolvedUserAddress)
+        )
       ]);
+      if (process.env.NODE_ENV !== 'production') console.log('[Query] balance/pending fetched', { encBal, pending: pending?.toString?.() });
 
       setPendingReward(pending.toString());
 
       if (isZeroHandle(encBal)) {
         setBalance('0');
         showNotification('Query successful', 'success');
+        if (process.env.NODE_ENV !== 'production') console.log('[Query] zero handle => 0');
         return;
       }
 
       const keypair = (instance as FheInstance).generateKeypair();
+      if (process.env.NODE_ENV !== 'production') console.log('[Query] keypair generated');
       const handleContractPairs = [
         { handle: encBal, contractAddress: CONTRACT_ADDRESSES.FHE_TOKEN },
       ];
@@ -114,12 +125,26 @@ export default function QueryDfBalanceBox() {
         startTimeStamp,
         durationDays
       );
+      if (process.env.NODE_ENV !== 'production') console.log('[Query] EIP712 ready');
 
+      // Only now require wallet for signing
+      const ep = provider
+        ? provider
+        : (typeof window !== 'undefined' && (window as unknown as { ethereum?: Eip1193Provider }).ethereum
+            ? new ethers.BrowserProvider((window as unknown as { ethereum: Eip1193Provider }).ethereum as Eip1193Provider)
+            : null);
+      if (!ep) {
+        showNotification('Wallet not available', 'error');
+        if (process.env.NODE_ENV !== 'production') console.error('[Query] no provider for signing');
+        return;
+      }
+      const signer = await ep.getSigner();
       const signature = await signer.signTypedData(
         eip712.domain,
         { UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification },
         eip712.message
       );
+      if (process.env.NODE_ENV !== 'production') console.log('[Query] signature ok');
 
       const result = await (instance as FheInstance).userDecrypt(
         handleContractPairs,
@@ -127,16 +152,19 @@ export default function QueryDfBalanceBox() {
         keypair.publicKey,
         signature.replace('0x', ''),
         contractAddresses,
-        userAddress,
+        resolvedUserAddress,
         startTimeStamp,
         durationDays
       );
+      if (process.env.NODE_ENV !== 'production') console.log('[Query] userDecrypt ok');
 
       const plain = result[encBal];
       const value = typeof plain === 'bigint' ? plain.toString() : plain.toString();
       setBalance(value);
       showNotification('Query successful', 'success');
+      if (process.env.NODE_ENV !== 'production') console.log('[Query] done', { value });
     } catch (e) {
+      if (process.env.NODE_ENV !== 'production') console.error('[Query] error', e);
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
         showNotification('Query cancelled', 'info');
@@ -145,39 +173,41 @@ export default function QueryDfBalanceBox() {
       }
     } finally {
       setIsLoading(false);
+      if (process.env.NODE_ENV !== 'production') console.log('[Query] end');
     }
   };
 
   const handleRefreshReward = async () => {
     try {
+      if (process.env.NODE_ENV !== 'production') console.log('[RefreshReward] start');
       if (!isConnected) {
         showNotification('Please connect wallet first', 'info');
+        if (process.env.NODE_ENV !== 'production') console.log('[RefreshReward] not connected');
         return;
       }
       if (!CONTRACT_ADDRESSES.NFT_DARK_FOREST) {
         showNotification('NFT contract address not configured', 'error');
+        if (process.env.NODE_ENV !== 'production') console.error('[RefreshReward] missing NFT address');
         return;
       }
 
       setIsRefreshingReward(true);
 
-      const ethProvider = provider
-        ? provider
-        : (typeof window !== 'undefined' && (window as unknown as { ethereum?: Eip1193Provider }).ethereum
-            ? new ethers.BrowserProvider((window as unknown as { ethereum: Eip1193Provider }).ethereum as Eip1193Provider)
-            : null);
-      if (!ethProvider) {
+      const userAddr = address;
+      if (!userAddr) {
         showNotification('Wallet not available', 'error');
+        if (process.env.NODE_ENV !== 'production') console.error('[RefreshReward] no address');
         return;
       }
-      const signer = await ethProvider.getSigner();
-      const userAddress = await signer.getAddress();
-      const nft = new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, signer);
 
-      const pending = await nft.getPendingReward(userAddress);
+      const pending = await readWithFallback((p) => 
+        new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).getPendingReward(userAddr)
+      );
       setPendingReward(pending.toString());
       showNotification('Refresh successful', 'success');
+      if (process.env.NODE_ENV !== 'production') console.log('[RefreshReward] done', { pending: pending?.toString?.() });
     } catch (e) {
+      if (process.env.NODE_ENV !== 'production') console.error('[RefreshReward] error', e);
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
         showNotification('Refresh cancelled', 'info');
@@ -186,17 +216,21 @@ export default function QueryDfBalanceBox() {
       }
     } finally {
       setIsRefreshingReward(false);
+      if (process.env.NODE_ENV !== 'production') console.log('[RefreshReward] end');
     }
   };
 
   const handleMint = async () => {
     try {
+      if (process.env.NODE_ENV !== 'production') console.log('[Claim] start');
       if (!isConnected) {
         showNotification('Please connect wallet first', 'info');
+        if (process.env.NODE_ENV !== 'production') console.log('[Claim] not connected');
         return;
       }
       if (!CONTRACT_ADDRESSES.NFT_DARK_FOREST) {
         showNotification('NFT contract address not configured', 'error');
+        if (process.env.NODE_ENV !== 'production') console.error('[Claim] missing NFT address');
         return;
       }
 
@@ -209,6 +243,7 @@ export default function QueryDfBalanceBox() {
             : null);
       if (!ethProvider) {
         showNotification('Wallet not available', 'error');
+        if (process.env.NODE_ENV !== 'production') console.error('[Claim] no provider');
         return;
       }
       const signer = await ethProvider.getSigner();
@@ -221,7 +256,9 @@ export default function QueryDfBalanceBox() {
       showNotification('Claim successful!', 'success');
 
       await handleRefreshReward();
+      if (process.env.NODE_ENV !== 'production') console.log('[Claim] done');
     } catch (e) {
+      if (process.env.NODE_ENV !== 'production') console.error('[Claim] error', e);
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
         showNotification('Claim cancelled', 'info');
@@ -230,6 +267,7 @@ export default function QueryDfBalanceBox() {
       }
     } finally {
       setIsMinting(false);
+      if (process.env.NODE_ENV !== 'production') console.log('[Claim] end');
     }
   };
 

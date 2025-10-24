@@ -7,7 +7,7 @@ import { CONTRACT_ADDRESSES, DarkForestNFTABI } from '@/config';
 import { useNotificationContext } from '@/contexts/NotificationContext';
 import HeroCard from './HeroCard';
 import { ipfsToHttp } from '@/config/ipfs';
-import { getReadOnlyContract } from '@/lib/provider';
+import { readWithFallback } from '@/lib/provider';
 
 const HERO_CLASSES = [
   {
@@ -57,23 +57,25 @@ export default function MintSection() {
     
     const loadTotal = async () => {
       try {
-        // Use stable public RPC for read-only queries
-        const nftRead = getReadOnlyContract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI);
-        const res: bigint = await nftRead.totalSupply();
+        if (process.env.NODE_ENV !== 'production') console.debug('[MintSection] loadTotal start');
+        const res: bigint = await readWithFallback((p) => 
+          new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).totalSupply()
+        );
         if (!cancelled) {
           setTotalMinted(Number(res));
           retryCountRef.current = 0; // Reset retry count on success
         }
+        if (process.env.NODE_ENV !== 'production') console.log('[MintSection] loadTotal ok', { total: Number(res) });
       } catch (err) {
         // Retry on failure (RPC may be temporarily unavailable)
         if (!cancelled && retryCountRef.current < maxRetries) {
           retryCountRef.current++;
-          console.warn(`Failed to load totalSupply (attempt ${retryCountRef.current}/${maxRetries}):`, err);
+          if (process.env.NODE_ENV !== 'production') console.error(`[MintSection] loadTotal failed attempt ${retryCountRef.current}/${maxRetries}`, err);
           setTimeout(() => {
             if (!cancelled) loadTotal();
           }, 2000 * retryCountRef.current); // Exponential backoff
         } else if (!cancelled) {
-          console.error('Failed to load totalSupply after retries:', err);
+          if (process.env.NODE_ENV !== 'production') console.error('[MintSection] loadTotal failed after retries', err);
         }
       }
     };
@@ -86,11 +88,31 @@ export default function MintSection() {
   const handleMint = async () => {
     if (!isConnected || !provider || !address) {
       showNotification('Please connect wallet first', 'error');
+      if (process.env.NODE_ENV !== 'production') console.log('[Mint] not connected or no provider/address', { isConnected, hasProvider: !!provider, address });
       return;
     }
 
     try {
       setIsMinting(true);
+      if (process.env.NODE_ENV !== 'production') console.log('[Mint] start');
+      // Unified tip: wallet popup guidance
+      showNotification("If the wallet doesn't pop up, please switch to a more stable RPC.", 'info');
+
+      // Ensure wallet has granted access (some wallets require explicit request)
+      try {
+        if (process.env.NODE_ENV !== 'production') console.log('[Mint] request accounts');
+        await provider.send('eth_requestAccounts', []);
+        if (process.env.NODE_ENV !== 'production') console.log('[Mint] request accounts ok');
+      } catch (reqErr) {
+        if (process.env.NODE_ENV !== 'production') console.error('[Mint] request accounts error', reqErr);
+        const code = (reqErr as { code?: unknown })?.code;
+        const msg = reqErr instanceof Error ? reqErr.message : String(reqErr);
+        if (code === 4001 || msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
+          showNotification('You cancelled the request', 'info');
+          return;
+        }
+        throw reqErr;
+      }
       
       const signer = await provider.getSigner();
       const nftContract = new ethers.Contract(
@@ -98,14 +120,36 @@ export default function MintSection() {
         DarkForestNFTABI,
         signer
       );
+      if (process.env.NODE_ENV !== 'production') console.log('[Mint] contract ready');
 
-      // FHE random number generation and encryption require significant gas
-      const tx = await nftContract.mint({
-        gasLimit: 10000000, // 10M gas limit
-      });
+      if (process.env.NODE_ENV !== 'production') console.log('[Mint] sending via eth_sendTransaction ...');
+      try { await provider.send('eth_requestAccounts', []); } catch {}
+      const from = await signer.getAddress();
+      const encodedData = nftContract.interface.encodeFunctionData('mint', []);
+      showNotification('Please confirm the mint transaction in your wallet', 'info');
+      const txHash = await (provider as unknown as { send: (method: string, params?: unknown[]) => Promise<string> }).send('eth_sendTransaction', [
+        { from, to: CONTRACT_ADDRESSES.NFT_DARK_FOREST, data: encodedData, gas: '0x989680' },
+      ]);
+      let tx;
+      try {
+        const receipt = await provider.waitForTransaction(txHash as string);
+        if (!receipt) throw new Error('Transaction pending without receipt');
+        tx = { hash: txHash as string, wait: async () => receipt } as unknown as ethers.ContractTransactionReceipt;
+      } catch {
+        if (process.env.NODE_ENV !== 'production') console.warn('[Mint] eth_sendTransaction path failed, trying contract.mint fallback');
+        showNotification('Please confirm the mint transaction in your wallet', 'info');
+        tx = await nftContract.mint({ gasLimit: 10_000_000n });
+      }
       showNotification('Minting transaction submitted, awaiting confirmation...', 'info');
+      if (process.env.NODE_ENV !== 'production') console.log('[Mint] tx submitted', tx?.hash);
 
       const receipt = await tx.wait();
+      if (!receipt) {
+        if (process.env.NODE_ENV !== 'production') console.log('[Mint] tx wait returned null (still pending)');
+        showNotification('Transaction pending... please wait', 'info');
+        return;
+      }
+      if (process.env.NODE_ENV !== 'production') console.log('[Mint] tx confirmed', (receipt as { hash?: string }).hash);
       
       // Reset minting state immediately after transaction confirmation
       setIsMinting(false);
@@ -123,6 +167,7 @@ export default function MintSection() {
       if (mintEvent) {
         const parsed = nftContract.interface.parseLog(mintEvent);
         const tokenId = Number(parsed?.args?.tokenId || 0);
+        if (process.env.NODE_ENV !== 'production') console.log('[Mint] event parsed', { tokenId });
         
         showNotification(`NFT minted successfully! Token ID: #${tokenId}`, 'success');
         
@@ -134,7 +179,7 @@ export default function MintSection() {
           const className = HERO_CLASSES[classId].name;
           showNotification(`You got ${className}!`, 'success');
         }).catch((err: Error) => {
-          console.error('Failed to query class:', err);
+          if (process.env.NODE_ENV !== 'production') console.error('[Mint] getClassId error', err);
         });
 
         // optimistic UI: increase total by 1; true value will refresh on next page load
@@ -145,9 +190,7 @@ export default function MintSection() {
       }
 
     } catch (err: unknown) {
-      console.error('Minting error (detailed):', err);
-      console.error('Error type:', typeof err);
-      console.error('Error object:', JSON.stringify(err, null, 2));
+      if (process.env.NODE_ENV !== 'production') console.error('[Mint] error (detailed):', err);
       
       // Check if user cancelled
       const errorCode = (err as { code?: string | number })?.code;
@@ -159,11 +202,7 @@ export default function MintSection() {
       // Other errors
       let message = 'Minting failed';
       if (err instanceof Error) {
-        console.error('Error details:', {
-          name: err.name,
-          message: err.message,
-          stack: err.stack,
-        });
+        if (process.env.NODE_ENV !== 'production') console.error('[Mint] error details:', { name: err.name, message: err.message, stack: err.stack });
         
         // Extract user-friendly error message
         if (err.message.includes('insufficient funds')) {
@@ -182,6 +221,7 @@ export default function MintSection() {
       showNotification(message, 'error');
     } finally {
       setIsMinting(false);
+      if (process.env.NODE_ENV !== 'production') console.log('[Mint] end');
     }
   };
 

@@ -6,6 +6,7 @@ import { NotificationProvider } from "@/contexts/NotificationContext";
 import FheScriptLoader from "@/components/FheScriptLoader";
 import BackgroundMusic from "@/components/BackgroundMusic";
 import NotificationContainer from "@/components/NotificationContainer";
+import GlobalErrorHandler from "@/components/GlobalErrorHandler";
 
 export const metadata: Metadata = {
   title: "NFT Dark Forest - Zama FHE Battle Game",
@@ -32,6 +33,7 @@ export default function RootLayout({
       </head>
       <body className="antialiased bg-gray-950 text-white">
         <FheScriptLoader />
+        <GlobalErrorHandler />
         <FheProvider>
           <WalletProvider>
             <NotificationProvider>
