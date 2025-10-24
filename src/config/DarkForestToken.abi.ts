@@ -804,4 +804,5 @@ export const DarkForestTokenABI = [
   }
 ] as const;
 
-
+// Usage:
+// import { DarkForestTokenABI } from '@/config/DarkForestToken.abi.ts';

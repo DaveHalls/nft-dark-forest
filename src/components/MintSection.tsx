@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { ethers } from 'ethers';
 import { useWalletContext } from '@/contexts/WalletContext';
 import { CONTRACT_ADDRESSES, DarkForestNFTABI } from '@/config';
 import { useNotificationContext } from '@/contexts/NotificationContext';
 import HeroCard from './HeroCard';
 import { ipfsToHttp } from '@/config/ipfs';
+import { getReadOnlyContract } from '@/lib/provider';
 
 const HERO_CLASSES = [
   {
@@ -48,24 +49,36 @@ export default function MintSection() {
   const [mintedTokenId, setMintedTokenId] = useState<number | null>(null);
   const [mintedClassId, setMintedClassId] = useState<number | null>(null);
   const [totalMinted, setTotalMinted] = useState<number>(0);
+  const retryCountRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
+    const maxRetries = 3;
+    
     const loadTotal = async () => {
       try {
-        const readProvider = provider ?? new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC_URL);
-        if (!readProvider) return;
-        const nftRead = new ethers.Contract(
-          CONTRACT_ADDRESSES.NFT_DARK_FOREST,
-          DarkForestNFTABI,
-          readProvider
-        );
+        // Use stable public RPC for read-only queries
+        const nftRead = getReadOnlyContract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI);
         const res: bigint = await nftRead.totalSupply();
-        if (!cancelled) setTotalMinted(Number(res));
-      } catch {
-        // ignore read errors; UI will show 0 until refresh
+        if (!cancelled) {
+          setTotalMinted(Number(res));
+          retryCountRef.current = 0; // Reset retry count on success
+        }
+      } catch (err) {
+        // Retry on failure (RPC may be temporarily unavailable)
+        if (!cancelled && retryCountRef.current < maxRetries) {
+          retryCountRef.current++;
+          console.warn(`Failed to load totalSupply (attempt ${retryCountRef.current}/${maxRetries}):`, err);
+          setTimeout(() => {
+            if (!cancelled) loadTotal();
+          }, 2000 * retryCountRef.current); // Exponential backoff
+        } else if (!cancelled) {
+          console.error('Failed to load totalSupply after retries:', err);
+        }
       }
     };
+    
+    retryCountRef.current = 0; // Reset retry count when provider changes
     loadTotal();
     return () => { cancelled = true; };
   }, [provider]);

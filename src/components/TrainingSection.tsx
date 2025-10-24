@@ -10,6 +10,7 @@ import { ipfsToHttp } from '@/config/ipfs';
 import NFTDetailModal from './NFTDetailModal';
 import { isNetworkSwitchError } from '@/utils/errorHandler';
 import { makeKey, getJSON, setJSON, remove as removeCache } from '@/lib/cache';
+import { getReadOnlyProvider, getReadOnlyContract } from '@/lib/provider';
 
 interface OwnedNFT {
   tokenId: number;
@@ -110,7 +111,7 @@ export default function TrainingSection() {
   };
 
   const loadOwned = async (force = false): Promise<OwnedNFT[] | undefined> => {
-    if (!provider || !address) return;
+    if (!address) return;
     
     const now = Date.now();
     if (!force && now - lastLoadTimeRef.current < 3000) {
@@ -125,33 +126,45 @@ export default function TrainingSection() {
       if (!force && cachedOwned && cachedOwned.length && owned.length === 0) {
         setOwned(cachedOwned);
       }
-      const nft = new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, provider);
+      // Use stable public RPC for read-only queries
+      const nft = getReadOnlyContract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI);
       
-      const currentBlock = await provider.getBlockNumber();
-      const fromBlock = Math.max(0, currentBlock - 50000);
+      let myTokenIds: Set<number>;
 
-      // Use Transfer events to find user's NFTs
-      const transferToFilter = nft.filters.Transfer(null, address);
-      const transferFromFilter = nft.filters.Transfer(address, null);
-      
-      const [transferToEvents, transferFromEvents] = await Promise.all([
-        nft.queryFilter(transferToFilter, fromBlock, 'latest'),
-        nft.queryFilter(transferFromFilter, fromBlock, 'latest')
-      ]);
+      try {
+        // Use contract function to query owned NFTs (more efficient, no block range limit)
+        const tokenIds = await nft.tokensOfOwner(address);
+        myTokenIds = new Set(tokenIds.map((id: bigint) => Number(id)));
+      } catch {
+        // Fallback to event query if contract method not available
+        console.warn('Contract method tokensOfOwner not available, falling back to event query');
+        
+        const readProvider = getReadOnlyProvider();
+        const currentBlock = await readProvider.getBlockNumber();
+        const fromBlock = Math.max(0, currentBlock - 50000);
 
-      const myTokenIds = new Set<number>();
-      
-      for (const event of transferToEvents) {
-        if ('args' in event) {
-          const tokenId = Number(event.args[2]);
-          if (tokenId) myTokenIds.add(tokenId);
+        const transferToFilter = nft.filters.Transfer(null, address);
+        const transferFromFilter = nft.filters.Transfer(address, null);
+        
+        const [transferToEvents, transferFromEvents] = await Promise.all([
+          nft.queryFilter(transferToFilter, fromBlock, 'latest'),
+          nft.queryFilter(transferFromFilter, fromBlock, 'latest')
+        ]);
+
+        myTokenIds = new Set<number>();
+        
+        for (const event of transferToEvents) {
+          if ('args' in event) {
+            const tokenId = Number(event.args[2]);
+            if (tokenId) myTokenIds.add(tokenId);
+          }
         }
-      }
-      
-      for (const event of transferFromEvents) {
-        if ('args' in event) {
-          const tokenId = Number(event.args[2]);
-          myTokenIds.delete(tokenId);
+        
+        for (const event of transferFromEvents) {
+          if ('args' in event) {
+            const tokenId = Number(event.args[2]);
+            myTokenIds.delete(tokenId);
+          }
         }
       }
 
@@ -204,7 +217,10 @@ export default function TrainingSection() {
 
       const list = (await Promise.all(nftDataPromises)).filter((nft): nft is OwnedNFT => nft !== null) as OwnedNFT[];
       
+      // Sync upgrade state from events
       try {
+        const readProvider = getReadOnlyProvider();
+        const currentBlock = await readProvider.getBlockNumber();
         const myIds = new Set(list.map(n => n.tokenId));
         const started: Record<number, { completeAt: number; blockNumber: number }> = {};
         const finished: Record<number, number> = {};
@@ -212,7 +228,7 @@ export default function TrainingSection() {
         const cacheKey = scopedKey('upgradeEvents');
         const lastBlockKey = scopedKey('upgradeLastBlock');
         
-        let eventFromBlock = fromBlock;
+        let eventFromBlock = Math.max(0, currentBlock - 50000);
         
         try {
           const cachedEvents = getJSON<{ started: Record<number, { completeAt: number; blockNumber: number }>; finished: Record<number, number> }>(cacheKey);
@@ -289,10 +305,12 @@ export default function TrainingSection() {
   };
 
   const loadTrainingHistory = async (nftList: OwnedNFT[]) => {
-    if (!provider || nftList.length === 0) return;
+    if (nftList.length === 0) return;
     
     try {
-      const nft = new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, provider);
+      // Use stable public RPC for read-only queries
+      const nft = getReadOnlyContract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI);
+      const readProvider = getReadOnlyProvider();
       const myTokenIds = new Set(nftList.map(n => n.tokenId));
       
       interface TrainingEvent {
@@ -304,7 +322,7 @@ export default function TrainingSection() {
         success?: boolean;
       }
       
-      const currentBlock = await provider.getBlockNumber();
+      const currentBlock = await readProvider.getBlockNumber();
       const cacheKey = scopedKey('history');
       const lastBlockKey = scopedKey('historyLastBlock');
       
@@ -411,7 +429,7 @@ export default function TrainingSection() {
         if (blockCache.has(blockNumber)) {
           return blockCache.get(blockNumber)!;
         }
-        const block = await provider.getBlock(blockNumber);
+        const block = await readProvider.getBlock(blockNumber);
         const timestamp = block!.timestamp;
         blockCache.set(blockNumber, timestamp);
         return timestamp;
@@ -625,9 +643,8 @@ export default function TrainingSection() {
   }, []);
 
   const loadUpgradeState = async (id: number) => {
-    if (!provider) return;
     try {
-      const nft = new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, provider);
+      const nft = getReadOnlyContract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI);
       const st = await nft.getUpgradeState(id);
       const inProgress = Boolean(st.inProgress ?? st[0]);
       if (!inProgress) {
@@ -731,11 +748,11 @@ export default function TrainingSection() {
     try {
       setFinishingTokens(prev => new Set(prev).add(tokenId));
       
-
-      const nftRead = new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, provider!);
+      const readProvider = getReadOnlyProvider();
+      const nftRead = getReadOnlyContract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI);
       const st = await nftRead.getUpgradeState(tokenId);
       const completeAt = Number(st.completeAt ?? st[1]);
-      const currentBlock = await provider!.getBlock('latest');
+      const currentBlock = await readProvider.getBlock('latest');
       const blockTimestamp = currentBlock!.timestamp;
       const bufferUntil = completeAt + 5;
       

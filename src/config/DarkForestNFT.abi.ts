@@ -1333,6 +1333,64 @@ export const DarkForestNFTABI = [
     "type": "function"
   },
   {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "owner",
+        "type": "address"
+      }
+    ],
+    "name": "tokensOfOwner",
+    "outputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "",
+        "type": "uint256[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "owner",
+        "type": "address"
+      }
+    ],
+    "name": "tokensOfOwnerWithDetails",
+    "outputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "tokenIds",
+        "type": "uint256[]"
+      },
+      {
+        "internalType": "uint8[]",
+        "name": "classIds",
+        "type": "uint8[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "wins",
+        "type": "uint256[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "losses",
+        "type": "uint256[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "cooldowns",
+        "type": "uint256[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [],
     "name": "totalSupply",
     "outputs": [
@@ -1383,4 +1441,5 @@ export const DarkForestNFTABI = [
   }
 ] as const;
 
-
+// Usage:
+// import { DarkForestNFTABI } from '@/config/DarkForestNFT.abi.ts';

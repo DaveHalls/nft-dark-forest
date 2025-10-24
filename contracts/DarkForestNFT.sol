@@ -553,6 +553,80 @@ contract DarkForestNFT is ERC721, Ownable, SepoliaConfig {
         return _nextTokenId - 1;
     }
 
+    function tokensOfOwner(address owner) external view returns (uint256[] memory) {
+        uint256 supply = _nextTokenId - 1;
+        uint256[] memory temp = new uint256[](supply);
+        uint256 count = 0;
+
+        for (uint256 i = 1; i <= supply; i++) {
+            try this.ownerOf(i) returns (address tokenOwner) {
+                if (tokenOwner == owner) {
+                    temp[count] = i;
+                    count++;
+                }
+            } catch {
+                continue;
+            }
+        }
+
+        uint256[] memory result = new uint256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            result[i] = temp[i];
+        }
+
+        return result;
+    }
+
+    function tokensOfOwnerWithDetails(address owner) external view returns (
+        uint256[] memory tokenIds,
+        uint8[] memory classIds,
+        uint256[] memory wins,
+        uint256[] memory losses,
+        uint256[] memory cooldowns
+    ) {
+        uint256 supply = _nextTokenId - 1;
+        uint256[] memory tempIds = new uint256[](supply);
+        uint8[] memory tempClasses = new uint8[](supply);
+        uint256[] memory tempWins = new uint256[](supply);
+        uint256[] memory tempLosses = new uint256[](supply);
+        uint256[] memory tempCooldowns = new uint256[](supply);
+        uint256 count = 0;
+
+        for (uint256 i = 1; i <= supply; i++) {
+            try this.ownerOf(i) returns (address tokenOwner) {
+                if (tokenOwner == owner) {
+                    tempIds[count] = i;
+                    tempClasses[count] = tokenIdToClass[i];
+                    BattleRecord memory record = battleRecords[i];
+                    tempWins[count] = record.wins;
+                    tempLosses[count] = record.losses;
+                    tempCooldowns[count] = block.timestamp >= record.cooldownUntil 
+                        ? 0 
+                        : record.cooldownUntil - block.timestamp;
+                    count++;
+                }
+            } catch {
+                continue;
+            }
+        }
+
+        tokenIds = new uint256[](count);
+        classIds = new uint8[](count);
+        wins = new uint256[](count);
+        losses = new uint256[](count);
+        cooldowns = new uint256[](count);
+        
+        for (uint256 i = 0; i < count; i++) {
+            tokenIds[i] = tempIds[i];
+            classIds[i] = tempClasses[i];
+            wins[i] = tempWins[i];
+            losses[i] = tempLosses[i];
+            cooldowns[i] = tempCooldowns[i];
+        }
+
+        return (tokenIds, classIds, wins, losses, cooldowns);
+    }
+
     // ============ Rewards (claimable) ============
     function getPendingReward(address user) external view returns (uint256) {
         return pendingRewards[user];

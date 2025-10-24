@@ -8,6 +8,7 @@ import { useWalletContext } from '@/contexts/WalletContext';
 import { useNotificationContext } from '@/contexts/NotificationContext';
 import { ipfsToHttp } from '@/config/ipfs';
 import { isNetworkSwitchError } from '@/utils/errorHandler';
+import { getReadOnlyContract } from '@/lib/provider';
 
 interface ListingItem {
   tokenId: number;
@@ -30,7 +31,7 @@ interface MyItem {
 }
 
 export default function MarketSection() {
-  const { provider, isConnected } = useWalletContext();
+  const { provider, isConnected, address } = useWalletContext();
   const { showNotification } = useNotificationContext();
   const [items, setItems] = useState<ListingItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -50,14 +51,14 @@ export default function MarketSection() {
 
   const loadListings = async () => {
     try {
-      if (!provider) return;
       if (!CONTRACT_ADDRESSES.MARKET) {
         showNotification('MARKET address not configured', 'error');
         return;
       }
       setLoading(true);
-      const read = new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, provider);
-      const market = new ethers.Contract(CONTRACT_ADDRESSES.MARKET, DarkForestMarketABI, provider);
+      // Use stable public RPC for read-only queries
+      const read = getReadOnlyContract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI);
+      const market = getReadOnlyContract(CONTRACT_ADDRESSES.MARKET, DarkForestMarketABI);
       const supply = Number(await read.totalSupply());
       const list: ListingItem[] = [];
       for (let id = 1; id <= supply; id++) {
@@ -136,17 +137,34 @@ export default function MarketSection() {
 
   const loadMyNFTs = async () => {
     try {
-      if (!provider) return;
+      if (!provider || !address) return;
       setMyLoading(true);
-      const signer = await provider.getSigner();
-      const me = await signer.getAddress();
-      const read = new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, provider);
-      const supply = Number(await read.totalSupply());
+      // Use stable public RPC for read-only queries
+      const read = getReadOnlyContract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI);
+      
+      let myTokenIds: number[] = [];
+      
+      try {
+        // Use contract function to query owned NFTs (more efficient than iterating all)
+        const tokenIds = await read.tokensOfOwner(address);
+        myTokenIds = tokenIds.map((id: bigint) => Number(id));
+      } catch {
+        // Fallback to iteration if contract method not available
+        console.warn('Contract method tokensOfOwner not available, falling back to iteration');
+        const supply = Number(await read.totalSupply());
+        for (let id = 1; id <= supply; id++) {
+          try {
+            const owner = await read.ownerOf(id);
+            if (owner.toLowerCase() === address.toLowerCase()) {
+              myTokenIds.push(id);
+            }
+          } catch {}
+        }
+      }
+      
       const list: MyItem[] = [];
-      for (let id = 1; id <= supply; id++) {
+      for (const id of myTokenIds) {
         try {
-          const owner = await read.ownerOf(id);
-          if (owner.toLowerCase() !== me.toLowerCase()) continue;
           const classId = Number(await read.getClassId(id));
           const name = await read.getClass(id);
           const imageCid = [

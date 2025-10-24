@@ -10,6 +10,7 @@ import BattleArena, { BattleInfo } from './BattleArena';
 import NFTDetailModal from './NFTDetailModal';
 import { ipfsToHttp } from '@/config/ipfs';
 import { isNetworkSwitchError } from '@/utils/errorHandler';
+import { getReadOnlyProvider, getReadOnlyContract } from '@/lib/provider';
 
 const HERO_CLASSES = [
   {
@@ -137,44 +138,51 @@ export default function MyNFTs() {
   }, []);
 
   const loadMyNFTs = async () => {
-    if (!provider || !address) return;
+    if (!address) return;
 
     try {
       setIsLoading(true);
       
-      const nftContract = new ethers.Contract(
+      // Use stable public RPC for read-only queries
+      const nftContract = getReadOnlyContract(
         CONTRACT_ADDRESSES.NFT_DARK_FOREST,
-        DarkForestNFTABI,
-        provider
+        DarkForestNFTABI
       );
 
-      const currentBlock = await provider.getBlockNumber();
-      const fromBlock = Math.max(0, currentBlock - 50000);
+      let myTokenIds: Set<number>;
 
-      // Use Transfer events to find user's NFTs (much faster than iterating all)
-      const transferToFilter = nftContract.filters.Transfer(null, address);
-      const transferFromFilter = nftContract.filters.Transfer(address, null);
-      
-      const [transferToEvents, transferFromEvents] = await Promise.all([
-        nftContract.queryFilter(transferToFilter, fromBlock, 'latest'),
-        nftContract.queryFilter(transferFromFilter, fromBlock, 'latest')
-      ]);
+      try {
+        const tokenIds = await nftContract.tokensOfOwner(address);
+        myTokenIds = new Set(tokenIds.map((id: bigint) => Number(id)));
+      } catch {
+        console.warn('Contract method tokensOfOwner not available, falling back to event query');
+        
+        const readProvider = getReadOnlyProvider();
+        const currentBlock = await readProvider.getBlockNumber();
+        const fromBlock = Math.max(0, currentBlock - 50000);
 
-      const myTokenIds = new Set<number>();
-      
-      // Add tokens received
-      for (const event of transferToEvents) {
-        if ('args' in event) {
-          const tokenId = Number(event.args[2]);
-          if (tokenId) myTokenIds.add(tokenId);
+        const transferToFilter = nftContract.filters.Transfer(null, address);
+        const transferFromFilter = nftContract.filters.Transfer(address, null);
+        
+        const [transferToEvents, transferFromEvents] = await Promise.all([
+          nftContract.queryFilter(transferToFilter, fromBlock, 'latest'),
+          nftContract.queryFilter(transferFromFilter, fromBlock, 'latest')
+        ]);
+
+        myTokenIds = new Set<number>();
+        
+        for (const event of transferToEvents) {
+          if ('args' in event) {
+            const tokenId = Number(event.args[2]);
+            if (tokenId) myTokenIds.add(tokenId);
+          }
         }
-      }
-      
-      // Remove tokens sent away
-      for (const event of transferFromEvents) {
-        if ('args' in event) {
-          const tokenId = Number(event.args[2]);
-          myTokenIds.delete(tokenId);
+        
+        for (const event of transferFromEvents) {
+          if ('args' in event) {
+            const tokenId = Number(event.args[2]);
+            myTokenIds.delete(tokenId);
+          }
         }
       }
 
@@ -238,10 +246,12 @@ export default function MyNFTs() {
         const started: Record<number, { completeAt: number; blockNumber: number }> = {};
         const finished: Record<number, number> = {};
 
+        const readProvider = getReadOnlyProvider();
+        const currentBlock = await readProvider.getBlockNumber();
         const cacheKey = `upgradeHistory_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
         const lastBlockKey = `lastUpgradeBlock_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
         
-        let eventFromBlock = fromBlock;
+        let eventFromBlock = Math.max(0, currentBlock - 50000);
         
         try {
           const cachedData = localStorage.getItem(cacheKey);
@@ -391,8 +401,8 @@ export default function MyNFTs() {
             // Try to fetch battle details from BattleEnded event
             let reasonCode, faster, attackerCrit, defenderCrit;
             try {
-              if (!provider) throw new Error('Provider not available');
-              const currentBlock = await provider.getBlockNumber();
+              const readProvider = getReadOnlyProvider();
+              const currentBlock = await readProvider.getBlockNumber();
               const fromBlock = Math.max(0, currentBlock - 50000);
               const battleEndedFilter = nftContract.filters.BattleEnded(BigInt(reqIdStr));
               const endedEvents = await nftContract.queryFilter(battleEndedFilter, fromBlock, 'latest');
@@ -434,8 +444,8 @@ export default function MyNFTs() {
         }
       }
 
-      if (!provider) throw new Error('Provider not available');
-      const battleCurrentBlock = await provider.getBlockNumber();
+      const readProvider = getReadOnlyProvider();
+      const battleCurrentBlock = await readProvider.getBlockNumber();
       const battleLastBlockKey = `lastBattleBlock_${address}_${CONTRACT_ADDRESSES.NFT_DARK_FOREST}`;
       
       let battleFromBlock = Math.max(0, battleCurrentBlock - 50000);
@@ -566,8 +576,8 @@ export default function MyNFTs() {
       for (const battle of allBattles) {
         if (battle.status === 'completed' && battle.reasonCode === undefined) {
           try {
-            if (!provider) throw new Error('Provider not available');
-            const currentBlock = await provider.getBlockNumber();
+            const readProvider = getReadOnlyProvider();
+            const currentBlock = await readProvider.getBlockNumber();
             const fromBlock = Math.max(0, currentBlock - 50000);
             const battleEndedFilter = nftContract.filters.BattleEnded(BigInt(battle.requestId));
             const endedEvents = await nftContract.queryFilter(battleEndedFilter, fromBlock, 'latest');
