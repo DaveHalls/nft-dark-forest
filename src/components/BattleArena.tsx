@@ -7,7 +7,7 @@ import { useWalletContext } from '@/contexts/WalletContext';
 import { CONTRACT_ADDRESSES, DarkForestNFTABI } from '@/config';
 import { ipfsToHttp } from '@/config/ipfs';
 import { makeKey, getJSON, setJSON, remove as removeCache } from '@/lib/cache';
-import { requestAccountsOrThrow, sendTxWithPopup } from '@/lib/provider';
+import { requestAccountsOrThrow, sendTxWithPopup, readWithFallback } from '@/lib/provider';
 
 export interface BattleInfo {
   requestId: string;
@@ -83,15 +83,11 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
           const hit = cachedMeta[tokenId];
           if (hit) fromCache[tokenId] = hit; else missing.push(tokenId);
         }
+
         if (Object.keys(fromCache).length) {
           setExternalNFTs(prev => ({ ...prev, ...fromCache }));
         }
         if (missing.length === 0) return;
-        const nftContract = new ethers.Contract(
-          CONTRACT_ADDRESSES.NFT_DARK_FOREST,
-          DarkForestNFTABI,
-          provider as unknown as ethers.ContractRunner
-        );
 
         const HERO_CLASSES = [
           { id: 0, name: 'Brave Warrior', imageCid: 'bafkreifkvbyytyqi7z66a7q2k5kzoxxc7osevdafmmbvm2mbfkiyao5nie' },
@@ -104,16 +100,17 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
         const newExternalNFTs: Record<number, NFTInfo> = {};
 
         for (const tokenId of missing) {
-          const classIdBigInt = await nftContract.getClassId(tokenId);
+          const classIdBigInt = await readWithFallback((p) => new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).getClassId(tokenId));
           const classId = Number(classIdBigInt);
           const heroClass = HERO_CLASSES[classId];
 
           let wins = 0;
           let losses = 0;
           try {
-            const battleRecord = await nftContract.getBattleRecord(tokenId);
-            wins = Number(battleRecord.wins ?? battleRecord[0] ?? 0);
-            losses = Number(battleRecord.losses ?? battleRecord[1] ?? 0);
+            type BattleRecordTuple = [bigint, bigint] & { wins?: bigint; losses?: bigint };
+            const battleRecord = (await readWithFallback((p) => new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).getBattleRecord(tokenId))) as BattleRecordTuple;
+            wins = Number((battleRecord.wins ?? battleRecord[0] ?? 0n));
+            losses = Number((battleRecord.losses ?? battleRecord[1] ?? 0n));
           } catch {}
 
           newExternalNFTs[tokenId] = {
@@ -397,6 +394,8 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
     const postBuffer = bufferCountdowns[battle.requestId] || 0;
     const attackerNFT = getNFTInfo(battle.attackerTokenId);
     const defenderNFT = battle.defenderTokenId > 0 ? getNFTInfo(battle.defenderTokenId) : null;
+    
+    
 
     return (
       <div key={battle.requestId || `${battle.attackerTokenId}-temp`} className="bg-gray-900/50 border border-gray-700 rounded-lg p-3">
