@@ -742,7 +742,6 @@ export default function MyNFTs() {
 
     try {
       // Wallet popup guidance (align with Mint flow)
-      showNotification("If the wallet doesn't pop up, please switch to a more stable RPC.", 'info');
       // Prompt wallet first
       try {
         await (provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }).send('eth_requestAccounts', []);

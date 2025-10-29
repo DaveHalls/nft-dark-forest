@@ -128,7 +128,6 @@ export default function MarketSection() {
     try {
       if (!provider) return;
       try {
-        showNotification("If the wallet doesn't pop up, please switch to a more stable RPC.", 'info');
         await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -275,7 +274,6 @@ export default function MarketSection() {
       }
       setBusy(prev => ({ ...prev, [tokenId]: true }));
       try {
-        showNotification("If the wallet doesn't pop up, please switch to a more stable RPC.", 'info');
         await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

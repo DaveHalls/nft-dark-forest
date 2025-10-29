@@ -96,7 +96,6 @@ export default function MintSection() {
       setIsMinting(true);
       if (process.env.NODE_ENV !== 'production') console.log('[Mint] start');
       // Unified tip: wallet popup guidance
-      showNotification("If the wallet doesn't pop up, please switch to a more stable RPC.", 'info');
 
       // Ensure wallet has granted access (some wallets require explicit request)
       try {

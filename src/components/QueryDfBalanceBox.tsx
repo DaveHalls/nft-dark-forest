@@ -139,7 +139,6 @@ export default function QueryDfBalanceBox() {
         return;
       }
       try {
-        showNotification("If the wallet doesn't pop up, please switch to a more stable RPC.", 'info');
         await requestAccountsOrThrow(ep as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -259,7 +258,6 @@ export default function QueryDfBalanceBox() {
       }
       // Ensure wallet popup and send tx with unified flow
       try {
-        showNotification("If the wallet doesn't pop up, please switch to a more stable RPC.", 'info');
         await requestAccountsOrThrow(ethProvider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
