@@ -3,6 +3,10 @@
 ##  [Live Demo: nft-dark-forest.vercel.app](https://nft-dark-forest.vercel.app)
 
 This is a fully-featured on-chain NFT battle game powered by Zama Fully Homomorphic Encryption technology. All battle calculations are performed on-chain through FHE encryption, attributes remain completely private, and battle results are asynchronously decrypted via Zama Gateway. NFT value is determined by a single public attribute: win-loss record.
+
+### Demo Video
+[![NFT Dark Forest Demo](https://img.youtube.com/vi/EJSLSuD43wQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=EJSLSuD43wQ)
+
 ![NFT Dark Forest](./public/image.png)
 ## Contract Features Summary
 
