@@ -17,11 +17,27 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
 
   if (!isOpen) return null;
 
+  const hasInjected = typeof window !== 'undefined' && !!(window as unknown as { ethereum?: unknown }).ethereum;
+
   const handleConnect = async (wallet: EIP6963ProviderDetail) => {
     try {
       setIsConnecting(true);
       setError(null);
       await connectWallet(wallet);
+      onClose();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Connection failed';
+      setError(message);
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const handleConnectInjected = async () => {
+    try {
+      setIsConnecting(true);
+      setError(null);
+      await connectWallet();
       onClose();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Connection failed';
@@ -89,6 +105,15 @@ export default function WalletModal({ isOpen, onClose }: WalletModalProps) {
               <p className="text-sm text-gray-500">
                 Please install MetaMask or other EIP-6963 compatible wallet
               </p>
+              {hasInjected && (
+                <button
+                  onClick={handleConnectInjected}
+                  disabled={isConnecting}
+                  className="mt-4 w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Use injected wallet (MetaMask)
+                </button>
+              )}
             </div>
           )}
         </div>

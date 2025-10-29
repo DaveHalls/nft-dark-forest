@@ -8,7 +8,7 @@ import { useWalletContext } from '@/contexts/WalletContext';
 import { useNotificationContext } from '@/contexts/NotificationContext';
 import { ipfsToHttp } from '@/config/ipfs';
 import { isNetworkSwitchError } from '@/utils/errorHandler';
-import { readWithFallback } from '@/lib/provider';
+import { readWithFallback, requestAccountsOrThrow, sendTxWithPopup } from '@/lib/provider';
 
 interface ListingItem {
   tokenId: number;
@@ -127,13 +127,35 @@ export default function MarketSection() {
   const handleBuy = async (tokenId: number, price: string) => {
     try {
       if (!provider) return;
-      try { await (provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }).send('eth_requestAccounts', []); } catch {}
+      try {
+        showNotification("If the wallet doesn't pop up, please switch to a more stable RPC.", 'info');
+        await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
+          showNotification('Purchase cancelled', 'info');
+          return;
+        }
+        throw err;
+      }
       const signer = await provider.getSigner();
       const market = new ethers.Contract(CONTRACT_ADDRESSES.MARKET, DarkForestMarketABI, signer);
-      showNotification('Please confirm the transaction in your wallet', 'info');
-      const tx = await market.buy(tokenId, { value: price });
-      showNotification('Purchase transaction submitted', 'info');
-      await tx.wait();
+      const data = market.interface.encodeFunctionData('buy', [tokenId]);
+      const valueHex = `0x${BigInt(price).toString(16)}`;
+      const receipt = await sendTxWithPopup({
+        provider: provider as unknown as ethers.BrowserProvider & { send: (m: string, p?: unknown[]) => Promise<unknown> },
+        signer,
+        to: CONTRACT_ADDRESSES.MARKET,
+        data,
+        valueHex,
+        fallbackSend: async () => {
+          const tx = await market.buy(tokenId, { value: price });
+          return { hash: tx.hash } as { hash: string };
+        },
+        notify: (m, t) => showNotification(m, t),
+        pendingTip: 'Transaction submitted but not confirmed yet',
+      });
+      if (!receipt) return;
       showNotification('Purchase successful', 'success');
       await loadListings();
     } catch (e: unknown) {
@@ -252,22 +274,49 @@ export default function MarketSection() {
         return;
       }
       setBusy(prev => ({ ...prev, [tokenId]: true }));
-      try { await (provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }).send('eth_requestAccounts', []); } catch {}
+      try {
+        showNotification("If the wallet doesn't pop up, please switch to a more stable RPC.", 'info');
+        await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
+          showNotification('Listing cancelled', 'info');
+          return;
+        }
+        throw err;
+      }
       const signer = await provider.getSigner();
       const nft = new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, signer);
       const market = new ethers.Contract(CONTRACT_ADDRESSES.MARKET, DarkForestMarketABI, signer);
       const approved = await nft.getApproved(tokenId);
       if (approved.toLowerCase() !== CONTRACT_ADDRESSES.MARKET.toLowerCase()) {
-        showNotification('Please confirm the approval transaction in your wallet', 'info');
-        const txA = await nft.approve(CONTRACT_ADDRESSES.MARKET, tokenId);
-        showNotification('Market approval transaction submitted', 'info');
-        await txA.wait();
+        const dataApprove = nft.interface.encodeFunctionData('approve', [CONTRACT_ADDRESSES.MARKET, tokenId]);
+        await sendTxWithPopup({
+          provider: provider as unknown as ethers.BrowserProvider & { send: (m: string, p?: unknown[]) => Promise<unknown> },
+          signer,
+          to: CONTRACT_ADDRESSES.NFT_DARK_FOREST,
+          data: dataApprove,
+          fallbackSend: async () => {
+            const txA = await nft.approve(CONTRACT_ADDRESSES.MARKET, tokenId);
+            return { hash: txA.hash } as { hash: string };
+          },
+          notify: (m, t) => showNotification(m, t),
+          pendingTip: 'Transaction submitted but not confirmed yet',
+        });
       }
       const wei = ethers.parseEther(v);
-      showNotification('Please confirm the listing transaction in your wallet', 'info');
-      const tx = await market.list(tokenId, wei);
-      showNotification('Listing transaction submitted', 'info');
-      await tx.wait();
+      const dataList = market.interface.encodeFunctionData('list', [tokenId, wei]);
+      await sendTxWithPopup({
+        provider: provider as unknown as ethers.BrowserProvider & { send: (m: string, p?: unknown[]) => Promise<unknown> },
+        signer,
+        to: CONTRACT_ADDRESSES.MARKET,
+        data: dataList,
+        fallbackSend: async () => {
+          const tx = await market.list(tokenId, wei);
+          return { hash: tx.hash } as { hash: string };
+        },
+        notify: (m, t) => showNotification(m, t),
+      });
       showNotification('Listed successfully', 'success');
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);

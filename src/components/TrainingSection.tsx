@@ -10,7 +10,7 @@ import { ipfsToHttp } from '@/config/ipfs';
 import NFTDetailModal from './NFTDetailModal';
 import { isNetworkSwitchError } from '@/utils/errorHandler';
 import { makeKey, getJSON, setJSON, remove as removeCache } from '@/lib/cache';
-import { getReadOnlyContract, readWithFallback } from '@/lib/provider';
+import { getReadOnlyContract, readWithFallback, requestAccountsOrThrow, sendTxWithPopup } from '@/lib/provider';
 
 interface OwnedNFT {
   tokenId: number;
@@ -730,7 +730,17 @@ export default function TrainingSection() {
     try {
       setStartingTokens(prev => new Set(prev).add(tokenId));
       const nft = await getContract();
-      try { await (provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }).send('eth_requestAccounts', []); } catch {}
+      try {
+        showNotification("If the wallet doesn't pop up, please switch to a more stable RPC.", 'info');
+        await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
+          showNotification('Training cancelled', 'info');
+          return;
+        }
+        throw err;
+      }
 
       try {
         const st = await nft.getUpgradeState(tokenId);
@@ -743,10 +753,22 @@ export default function TrainingSection() {
         }
       } catch {}
 
-      showNotification('Please confirm the transaction in your wallet', 'info');
-      const tx = await nft.startUpgrade(BigInt(tokenId));
-      showNotification('Training start transaction submitted', 'info');
-      await tx.wait();
+      const data = nft.interface.encodeFunctionData('startUpgrade', [BigInt(tokenId)]);
+      if (!provider) throw new Error('Provider not ready');
+      const signer = await provider.getSigner();
+      const receipt = await sendTxWithPopup({
+        provider: provider as unknown as ethers.BrowserProvider & { send: (m: string, p?: unknown[]) => Promise<unknown> },
+        signer,
+        to: CONTRACT_ADDRESSES.NFT_DARK_FOREST,
+        data,
+        fallbackSend: async () => {
+          const tx = await nft.startUpgrade(BigInt(tokenId));
+          return { hash: tx.hash } as { hash: string };
+        },
+        notify: (m: string, t: 'info' | 'success' | 'error') => showNotification(m, t),
+        pendingTip: 'Transaction submitted but not confirmed yet',
+      });
+      if (!receipt) return;
       showNotification('Training started! Can be completed in 1 minute', 'success');
 
       try {
@@ -819,11 +841,29 @@ export default function TrainingSection() {
       }
       
       const nft = await getContract();
-      try { await (provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }).send('eth_requestAccounts', []); } catch {}
-      showNotification('If the wallet doesn\'t pop up, please switch to a more stable RPC.', 'info');
-      const tx = await nft.finishUpgrade(BigInt(tokenId));
-      showNotification('Complete training transaction submitted', 'info');
-      await tx.wait();
+      try { await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }); } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
+          showNotification('Training completion cancelled', 'info');
+          return;
+        }
+        throw err;
+      }
+      const data = nft.interface.encodeFunctionData('finishUpgrade', [BigInt(tokenId)]);
+      if (!provider) throw new Error('Provider not ready');
+      const signer = await provider.getSigner();
+      const receipt = await sendTxWithPopup({
+        provider: provider as unknown as ethers.BrowserProvider & { send: (m: string, p?: unknown[]) => Promise<unknown> },
+        signer,
+        to: CONTRACT_ADDRESSES.NFT_DARK_FOREST,
+        data,
+        fallbackSend: async () => {
+          const tx = await nft.finishUpgrade(BigInt(tokenId));
+          return { hash: tx.hash } as { hash: string };
+        },
+        notify: (m: string, t: 'info' | 'success' | 'error') => showNotification(m, t),
+      });
+      if (!receipt) return;
       await loadUpgradeState(tokenId);
       const updatedList = await loadOwned(true);
       if (updatedList) {

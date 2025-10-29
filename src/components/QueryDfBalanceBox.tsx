@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
 import type { Eip1193Provider } from 'ethers';
 import { CONTRACT_ADDRESSES, DarkForestTokenABI, DarkForestNFTABI } from '@/config';
-import { readWithFallback } from '@/lib/provider';
+import { readWithFallback, requestAccountsOrThrow, sendTxWithPopup } from '@/lib/provider';
 import { initFhevm, getFhevmInstance } from '@/fhevm/fhe-client';
 import { useWalletContext } from '@/contexts/WalletContext';
 import { useNotificationContext } from '@/contexts/NotificationContext';
@@ -138,6 +138,17 @@ export default function QueryDfBalanceBox() {
         if (process.env.NODE_ENV !== 'production') console.error('[Query] no provider for signing');
         return;
       }
+      try {
+        showNotification("If the wallet doesn't pop up, please switch to a more stable RPC.", 'info');
+        await requestAccountsOrThrow(ep as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
+          showNotification('Query cancelled', 'info');
+          return;
+        }
+        throw err;
+      }
       const signer = await ep.getSigner();
       const signature = await signer.signTypedData(
         eip712.domain,
@@ -246,13 +257,34 @@ export default function QueryDfBalanceBox() {
         if (process.env.NODE_ENV !== 'production') console.error('[Claim] no provider');
         return;
       }
+      // Ensure wallet popup and send tx with unified flow
+      try {
+        showNotification("If the wallet doesn't pop up, please switch to a more stable RPC.", 'info');
+        await requestAccountsOrThrow(ethProvider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
+          showNotification('Claim cancelled', 'info');
+          return;
+        }
+        throw err;
+      }
       const signer = await ethProvider.getSigner();
       const nft = new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, signer);
-
-      const tx = await nft.claimRewards();
-      showNotification('Claim transaction submitted, awaiting confirmation...', 'info');
-
-      await tx.wait();
+      const data = nft.interface.encodeFunctionData('claimRewards', []);
+      const receipt = await sendTxWithPopup({
+        provider: ethProvider as unknown as ethers.BrowserProvider & { send: (m: string, p?: unknown[]) => Promise<unknown> },
+        signer,
+        to: CONTRACT_ADDRESSES.NFT_DARK_FOREST,
+        data,
+        fallbackSend: async () => {
+          const tx = await nft.claimRewards();
+          return { hash: tx.hash };
+        },
+        notify: (m, t) => showNotification(m, t),
+        pendingTip: 'Transaction submitted but not confirmed yet',
+      });
+      if (!receipt) return;
       showNotification('Claim successful!', 'success');
 
       await handleRefreshReward();

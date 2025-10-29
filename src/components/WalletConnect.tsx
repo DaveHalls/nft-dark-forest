@@ -6,7 +6,7 @@ import { useState } from 'react';
 import WalletModal from './WalletModal';
 
 export default function WalletConnect() {
-  const { address, isConnected, disconnectWallet } = useWalletContext();
+  const { address, isConnected, disconnectWallet, availableWallets, connectWallet } = useWalletContext();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
 
@@ -51,7 +51,19 @@ export default function WalletConnect() {
   return (
     <>
       <button
-        onClick={() => setIsModalOpen(true)}
+        onClick={async () => {
+          try {
+            const hasInjected = typeof window !== 'undefined' && !!(window as unknown as { ethereum?: unknown }).ethereum;
+            if (availableWallets.length === 0 && hasInjected) {
+              await connectWallet();
+            } else {
+              setIsModalOpen(true);
+            }
+          } catch {
+            // Fallback to modal on failure
+            setIsModalOpen(true);
+          }
+        }}
         className="px-6 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-white rounded-lg transition-colors font-medium"
       >
         Connect Wallet

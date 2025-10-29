@@ -735,18 +735,39 @@ export default function MyNFTs() {
   };
 
   const handleBattle = async (tokenId: number) => {
-    if (!provider) return;
+    if (!provider || !address) {
+      showNotification('Please connect wallet first', 'error');
+      return;
+    }
 
     try {
-      // Training protection (use wallet provider for consistency)
+      // Wallet popup guidance (align with Mint flow)
+      showNotification("If the wallet doesn't pop up, please switch to a more stable RPC.", 'info');
+      // Prompt wallet first
       try {
-        const nftContract = new ethers.Contract(
-          CONTRACT_ADDRESSES.NFT_DARK_FOREST,
-          DarkForestNFTABI,
-          provider
-        );
-        const st = await nftContract.getUpgradeState(tokenId);
-        const inProgress = Boolean(st.inProgress ?? st[0]);
+        await (provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }).send('eth_requestAccounts', []);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const code = (err as { code?: unknown })?.code as unknown;
+        if (code === 4001 || msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
+          showNotification('Battle cancelled', 'info');
+          return;
+        }
+        throw err;
+      }
+      const signer = await provider.getSigner();
+
+      // Training protection (use stable read provider to avoid wallet RPC stall)
+      try {
+        const st = await readWithFallback((p) => new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, p).getUpgradeState(tokenId));
+        let inProgress = false;
+        if (st && typeof st === 'object') {
+          if (Array.isArray(st)) {
+            inProgress = Boolean(st[0]);
+          } else if ('inProgress' in (st as Record<string, unknown>)) {
+            inProgress = Boolean((st as { inProgress?: unknown }).inProgress);
+          }
+        }
         if (inProgress) {
           showNotification('This hero is training and cannot battle', 'error');
           return;
@@ -767,25 +788,55 @@ export default function MyNFTs() {
         if (exists) return prev;
         return [...prev, newBattle];
       });
-
-      try { await (provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }).send('eth_requestAccounts', []); } catch {}
-      try { await (provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }).send('eth_requestAccounts', []); } catch {}
-      const signer = await provider.getSigner();
       const nftContract = new ethers.Contract(
         CONTRACT_ADDRESSES.NFT_DARK_FOREST,
         DarkForestNFTABI,
         signer
       );
 
-      // FHE battle calculation requires significant gas
-      const txPromise = nftContract.initiateBattle(tokenId, { gasLimit: 10000000 });
-      const timer = setTimeout(() => {
-        showNotification('Waiting for wallet confirmation...', 'info');
-      }, 15000);
-      const tx = await txPromise.finally(() => clearTimeout(timer));
-      const receipt = await tx.wait();
+      // Prefer low-level send to prompt wallet UI quickly; fallback to contract call
+      const from = await signer.getAddress();
+      const encodedData = nftContract.interface.encodeFunctionData('initiateBattle', [tokenId]);
+      showNotification('Please confirm the battle transaction in your wallet', 'info');
+      let txHashStr = '' as string;
+      let txReceipt: ethers.TransactionReceipt | null = null;
+      try {
+        txHashStr = await (provider as unknown as { send: (method: string, params?: unknown[]) => Promise<string> }).send('eth_sendTransaction', [
+          { from, to: CONTRACT_ADDRESSES.NFT_DARK_FOREST, data: encodedData, gas: '0x989680' },
+        ]);
+        const stableProvider = getReadOnlyProvider();
+        txReceipt = await stableProvider.waitForTransaction(txHashStr, 1);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const code = (err as { code?: unknown })?.code as unknown;
+        if (code === 4001 || msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
+          showNotification('Battle cancelled', 'info');
+          setBattleList(prev => prev.filter(b => !(b.attackerTokenId === tokenId && b.status === 'initiating')));
+          return;
+        }
+        // Fallback to contract method if low-level path fails for non-cancel reasons
+        try {
+          const tx = await nftContract.initiateBattle(tokenId, { gasLimit: 10_000_000n });
+          txHashStr = tx.hash;
+          const stableProvider = getReadOnlyProvider();
+          txReceipt = await stableProvider.waitForTransaction(txHashStr, 1);
+        } catch (e2) {
+          const msg2 = e2 instanceof Error ? e2.message : String(e2);
+          const code2 = (e2 as { code?: unknown })?.code as unknown;
+          if (code2 === 4001 || msg2.includes('user rejected') || msg2.includes('User denied') || msg2.includes('ACTION_REJECTED')) {
+            showNotification('Battle cancelled', 'info');
+            setBattleList(prev => prev.filter(b => !(b.attackerTokenId === tokenId && b.status === 'initiating')));
+            return;
+          }
+          throw e2;
+        }
+      }
+      if (!txReceipt) {
+        showNotification('Transaction submitted but not confirmed yet', 'info');
+        return;
+      }
 
-      const battleInitiatedEvent = receipt.logs.find(
+      const battleInitiatedEvent = txReceipt.logs.find(
         (log: ethers.Log | ethers.EventLog) => {
           try {
             const parsed = nftContract.interface.parseLog({

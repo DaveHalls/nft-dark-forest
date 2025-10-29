@@ -33,7 +33,6 @@ export function getReadOnlyProvider(): ethers.JsonRpcProvider {
     throw new Error('NEXT_PUBLIC_RPC_URL has no valid endpoints');
   }
 
-  // 先使用第一个候选构建单一 Provider；需要时可在调用处实现顺序故障切换
   rpcIndex = 0;
   readOnlyProvider = buildSingleProvider(rpcCandidates[rpcIndex]);
   return readOnlyProvider as ethers.JsonRpcProvider;
@@ -70,7 +69,7 @@ export async function readWithFallback<T>(fn: (p: ethers.JsonRpcProvider) => Pro
     } catch (e) {
       lastErr = e;
       if (!isRateLimitOrNodeError(e)) break;
-      // 轮换到下一条 RPC
+
       const before = rpcIndex;
       rotateReadOnlyProvider();
       tried.add(before);
@@ -90,5 +89,70 @@ export function getReadOnlyContract<T = ethers.Contract>(
   abi: ethers.InterfaceAbi
 ): T {
   return new ethers.Contract(address, abi, getReadOnlyProvider()) as T;
+}
+
+/**
+ * Request wallet accounts to ensure the wallet popup shows up.
+ * Throws on user cancellation to allow caller to stop gracefully.
+ */
+export async function requestAccountsOrThrow(provider: { send: (m: string, p?: unknown[]) => Promise<unknown> }): Promise<void> {
+  try {
+    await provider.send('eth_requestAccounts', []);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const code = (err as { code?: unknown })?.code as unknown;
+    if (code === 4001 || msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
+      throw err;
+    }
+    // Propagate other errors as well
+    throw err;
+  }
+}
+
+export type NotifyFn = (msg: string, type: 'info' | 'success' | 'error') => void;
+
+/**
+ * Send transaction using low-level eth_sendTransaction first to reliably trigger wallet popup,
+ * then fall back to a provided contract call if needed. Waits for confirmation using the stable read-only provider.
+ */
+export async function sendTxWithPopup(
+  opts: {
+    provider: { send: (m: string, p?: unknown[]) => Promise<unknown> } & ethers.BrowserProvider;
+    signer: ethers.Signer;
+    to: string;
+    data: string;
+    gasHex?: string; // e.g. '0x989680'
+    valueHex?: string; // optional value in wei hex
+    fallbackSend?: () => Promise<{ hash: string }>;
+    notify?: NotifyFn;
+    pendingTip?: string;
+  }
+): Promise<ethers.TransactionReceipt | null> {
+  const { provider, signer, to, data, gasHex = '0x989680', valueHex, fallbackSend, notify, pendingTip } = opts;
+
+  if (notify) notify('Please confirm the transaction in your wallet', 'info');
+
+  let txHashStr = '';
+  let receipt: ethers.TransactionReceipt | null = null;
+  try {
+    const txObj: Record<string, unknown> = { from: await signer.getAddress(), to, data, gas: gasHex };
+    if (valueHex) txObj.value = valueHex;
+    txHashStr = await (provider as unknown as { send: (m: string, p?: unknown[]) => Promise<string> }).send('eth_sendTransaction', [txObj]);
+    const stable = getReadOnlyProvider();
+    receipt = await stable.waitForTransaction(txHashStr, 1);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const code = (err as { code?: unknown })?.code as unknown;
+    if (code === 4001 || msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
+      throw err;
+    }
+    if (!fallbackSend) throw err;
+    const tx = await fallbackSend();
+    txHashStr = tx.hash;
+    const stable = getReadOnlyProvider();
+    receipt = await stable.waitForTransaction(txHashStr, 1);
+  }
+  if (!receipt && pendingTip && notify) notify(pendingTip, 'info');
+  return receipt;
 }
 

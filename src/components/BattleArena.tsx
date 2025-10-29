@@ -7,6 +7,7 @@ import { useWalletContext } from '@/contexts/WalletContext';
 import { CONTRACT_ADDRESSES, DarkForestNFTABI } from '@/config';
 import { ipfsToHttp } from '@/config/ipfs';
 import { makeKey, getJSON, setJSON, remove as removeCache } from '@/lib/cache';
+import { requestAccountsOrThrow, sendTxWithPopup } from '@/lib/provider';
 
 export interface BattleInfo {
   requestId: string;
@@ -246,8 +247,6 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
     if (!provider) return;
 
     try {
-      onBattleUpdate(battle.requestId, { status: 'revealing' });
-
       const signer = await (provider as unknown as { getSigner: () => Promise<ethers.Signer> }).getSigner();
       const nftContract = new ethers.Contract(
         CONTRACT_ADDRESSES.NFT_DARK_FOREST,
@@ -274,10 +273,35 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
         throw new Error('This battle has already been completed');
       }
 
-      try { await (provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }).send('eth_requestAccounts', []); } catch {}
-      try { (window as unknown as { __notify?: (msg: string, type: string) => void }).__notify?.('Please confirm the reveal transaction in your wallet', 'info'); } catch {}
-      const tx = await nftContract.revealBattle(BigInt(battle.requestId), { gasLimit: 3000000 });
-      await tx.wait();
+      try {
+        await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
+          onBattleUpdate(battle.requestId, { error: 'Reveal cancelled by user' });
+          return;
+        }
+        throw err;
+      }
+
+      const data = nftContract.interface.encodeFunctionData('revealBattle', [BigInt(battle.requestId)]);
+      const receipt = await sendTxWithPopup({
+        provider: provider as unknown as ethers.BrowserProvider & { send: (m: string, p?: unknown[]) => Promise<unknown> },
+        signer,
+        to: CONTRACT_ADDRESSES.NFT_DARK_FOREST,
+        data,
+        gasHex: '0x2dc6c0',
+        fallbackSend: async () => {
+          const tx = await nftContract.revealBattle(BigInt(battle.requestId), { gasLimit: 3000000 });
+          return { hash: tx.hash } as { hash: string };
+        },
+        notify: (m, t) => { try { (window as unknown as { __notify?: (msg: string, type: string) => void }).__notify?.(m, t); } catch {} },
+        pendingTip: 'Transaction submitted but not confirmed yet',
+      });
+      if (!receipt) {
+        onBattleUpdate(battle.requestId, { error: 'Transaction submitted but not confirmed yet' });
+        return;
+      }
 
       console.log('Reveal request submitted, waiting for Gateway processing...');
 
@@ -377,13 +401,13 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
           return;
         } catch (readErr) {
           console.error('Failed to read battle status:', readErr);
-          // On read failure, maintain revealing to avoid flickering
-          onBattleUpdate(battle.requestId, { status: 'revealing', error: 'Fetching battle result, please wait...' });
+          // On read failure, revert to waiting with error
+          onBattleUpdate(battle.requestId, { status: 'waiting', error: 'Failed to fetch battle status' });
           return;
         }
       }
 
-      onBattleUpdate(battle.requestId, { status: 'waiting', error: errorMsg });
+      onBattleUpdate(battle.requestId, { error: errorMsg });
     }
   };
 
@@ -472,10 +496,23 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
                         DarkForestNFTABI,
                         signer
                       );
-                      try { await (provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }).send('eth_requestAccounts', []); } catch {}
-                      try { (window as unknown as { __notify?: (msg: string, type: string) => void }).__notify?.("If the wallet doesn't pop up, please switch to a more stable RPC.", 'info'); } catch {}
-                      const tx = await nftContract.retryReveal(BigInt(battle.requestId));
-                      await tx.wait();
+                      try { await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }); } catch (err) {
+                        const msg = err instanceof Error ? err.message : String(err);
+                        if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) return;
+                        throw err;
+                      }
+                      const data = nftContract.interface.encodeFunctionData('retryReveal', [BigInt(battle.requestId)]);
+                      await sendTxWithPopup({
+                        provider: provider as unknown as ethers.BrowserProvider & { send: (m: string, p?: unknown[]) => Promise<unknown> },
+                        signer,
+                        to: CONTRACT_ADDRESSES.NFT_DARK_FOREST,
+                        data,
+                        fallbackSend: async () => {
+                          const tx = await nftContract.retryReveal(BigInt(battle.requestId));
+                          return { hash: tx.hash } as { hash: string };
+                        },
+                        notify: (m, t) => { try { (window as unknown as { __notify?: (msg: string, type: string) => void }).__notify?.(m, t); } catch {} },
+                      });
                     } catch (err) {
                       console.error('Failed to retry reveal:', err);
                     }
