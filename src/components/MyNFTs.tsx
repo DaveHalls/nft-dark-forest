@@ -796,6 +796,7 @@ export default function MyNFTs() {
       // Prefer low-level send to prompt wallet UI quickly; fallback to contract call
       const from = await signer.getAddress();
       const encodedData = nftContract.interface.encodeFunctionData('initiateBattle', [tokenId]);
+      showNotification('Please confirm in your wallet', 'info');
       let txHashStr = '' as string;
       let txReceipt: ethers.TransactionReceipt | null = null;
       try {
