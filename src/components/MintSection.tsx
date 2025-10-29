@@ -96,6 +96,7 @@ export default function MintSection() {
       setIsMinting(true);
       if (process.env.NODE_ENV !== 'production') console.log('[Mint] start');
       // Unified tip: wallet popup guidance
+      showNotification('Please confirm in your wallet', 'info');
 
       // Ensure wallet has granted access (some wallets require explicit request)
       try {
@@ -125,7 +126,7 @@ export default function MintSection() {
       try { await provider.send('eth_requestAccounts', []); } catch {}
       const from = await signer.getAddress();
       const encodedData = nftContract.interface.encodeFunctionData('mint', []);
-      showNotification('Please confirm the mint transaction in your wallet', 'info');
+      showNotification('Please confirm in your wallet', 'info');
       let txHashStr = await (provider as unknown as { send: (method: string, params?: unknown[]) => Promise<string> }).send('eth_sendTransaction', [
         { from, to: CONTRACT_ADDRESSES.NFT_DARK_FOREST, data: encodedData, gas: '0x989680' },
       ]);
@@ -136,7 +137,7 @@ export default function MintSection() {
         tx = { hash: txHashStr as string, wait: async () => receipt } as unknown as ethers.ContractTransactionReceipt;
       } catch {
         if (process.env.NODE_ENV !== 'production') console.warn('[Mint] eth_sendTransaction path failed, trying contract.mint fallback');
-        showNotification('Please confirm the mint transaction in your wallet', 'info');
+        showNotification('Please confirm in your wallet', 'info');
         tx = await nftContract.mint({ gasLimit: 10_000_000n });
       }
       txHashStr = tx?.hash || '';

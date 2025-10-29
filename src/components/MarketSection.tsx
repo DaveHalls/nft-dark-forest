@@ -128,6 +128,7 @@ export default function MarketSection() {
     try {
       if (!provider) return;
       try {
+        showNotification('Please confirm in your wallet', 'info');
         await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -274,6 +275,7 @@ export default function MarketSection() {
       }
       setBusy(prev => ({ ...prev, [tokenId]: true }));
       try {
+        showNotification('Please confirm in your wallet', 'info');
         await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

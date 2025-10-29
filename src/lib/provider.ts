@@ -130,7 +130,7 @@ export async function sendTxWithPopup(
 ): Promise<ethers.TransactionReceipt | null> {
   const { provider, signer, to, data, gasHex = '0x989680', valueHex, fallbackSend, notify, pendingTip } = opts;
 
-  if (notify) notify('Please confirm the transaction in your wallet', 'info');
+  if (notify) notify('Please confirm in your wallet', 'info');
 
   let txHashStr = '';
   let receipt: ethers.TransactionReceipt | null = null;

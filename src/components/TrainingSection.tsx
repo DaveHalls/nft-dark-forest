@@ -731,6 +731,7 @@ export default function TrainingSection() {
       setStartingTokens(prev => new Set(prev).add(tokenId));
       const nft = await getContract();
       try {
+        showNotification('Please confirm in your wallet', 'info');
         await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

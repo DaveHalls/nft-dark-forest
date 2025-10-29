@@ -139,6 +139,7 @@ export default function QueryDfBalanceBox() {
         return;
       }
       try {
+        showNotification('Please confirm in your wallet', 'info');
         await requestAccountsOrThrow(ep as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -258,6 +259,7 @@ export default function QueryDfBalanceBox() {
       }
       // Ensure wallet popup and send tx with unified flow
       try {
+        showNotification('Please confirm in your wallet', 'info');
         await requestAccountsOrThrow(ethProvider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
