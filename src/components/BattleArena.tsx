@@ -247,6 +247,18 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
     if (!provider) return;
 
     try {
+      // Request accounts first to ensure wallet is active (especially after long wait)
+      try {
+        await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
+          onBattleUpdate(battle.requestId, { error: 'Reveal cancelled by user' });
+          return;
+        }
+        throw err;
+      }
+
       const signer = await (provider as unknown as { getSigner: () => Promise<ethers.Signer> }).getSigner();
       const nftContract = new ethers.Contract(
         CONTRACT_ADDRESSES.NFT_DARK_FOREST,
@@ -271,17 +283,6 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
 
       if (!battleRequest.isPending) {
         throw new Error('This battle has already been completed');
-      }
-
-      try {
-        await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
-          onBattleUpdate(battle.requestId, { error: 'Reveal cancelled by user' });
-          return;
-        }
-        throw err;
       }
 
       const data = nftContract.interface.encodeFunctionData('revealBattle', [BigInt(battle.requestId)]);
@@ -489,6 +490,12 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
                 <button
                   onClick={async () => {
                     try {
+                      // Request accounts first to ensure wallet is active (especially after long wait)
+                      try { await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }); } catch (err) {
+                        const msg = err instanceof Error ? err.message : String(err);
+                        if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) return;
+                        throw err;
+                      }
                       const signer = await (provider as unknown as { getSigner: () => Promise<ethers.Signer> })?.getSigner();
                       if (!signer) return;
                       const nftContract = new ethers.Contract(
@@ -496,11 +503,6 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
                         DarkForestNFTABI,
                         signer
                       );
-                      try { await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }); } catch (err) {
-                        const msg = err instanceof Error ? err.message : String(err);
-                        if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) return;
-                        throw err;
-                      }
                       const data = nftContract.interface.encodeFunctionData('retryReveal', [BigInt(battle.requestId)]);
                       await sendTxWithPopup({
                         provider: provider as unknown as ethers.BrowserProvider & { send: (m: string, p?: unknown[]) => Promise<unknown> },

@@ -729,7 +729,8 @@ export default function TrainingSection() {
     }
     try {
       setStartingTokens(prev => new Set(prev).add(tokenId));
-      const nft = await getContract();
+      
+      // Request accounts first to ensure wallet is active (especially after long wait)
       try {
         await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> });
       } catch (err) {
@@ -740,6 +741,8 @@ export default function TrainingSection() {
         }
         throw err;
       }
+      
+      const nft = await getContract();
 
       try {
         const st = await nft.getUpgradeState(tokenId);
@@ -824,7 +827,16 @@ export default function TrainingSection() {
     try {
       setFinishingTokens(prev => new Set(prev).add(tokenId));
       
-      // 使用钱包 provider 做准备性读取，避免只读 RPC 与钱包节点不同步
+      // Request accounts first to ensure wallet is active (especially after long wait)
+      try { await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }); } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
+          showNotification('Training completion cancelled', 'info');
+          return;
+        }
+        throw err;
+      }
+      
       const nftRead = new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, provider);
       const st = await nftRead.getUpgradeState(tokenId);
       const completeAt = Number(st.completeAt ?? st[1]);
@@ -840,14 +852,6 @@ export default function TrainingSection() {
       }
       
       const nft = await getContract();
-      try { await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }); } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
-          showNotification('Training completion cancelled', 'info');
-          return;
-        }
-        throw err;
-      }
       const data = nft.interface.encodeFunctionData('finishUpgrade', [BigInt(tokenId)]);
       if (!provider) throw new Error('Provider not ready');
       const signer = await provider.getSigner();
