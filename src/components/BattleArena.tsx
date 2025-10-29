@@ -247,7 +247,6 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
     if (!provider) return;
 
     try {
-      // Request accounts first to ensure wallet is active (especially after long wait)
       try {
         await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> });
       } catch (err) {
@@ -265,25 +264,6 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
         DarkForestNFTABI,
         signer
       );
-
-      // Double check if on-chain time meets requirements
-      const battleRequest = await nftContract.getBattleRequest(BigInt(battle.requestId));
-      const currentBlock = await (provider as unknown as { getBlock: (tag: string) => Promise<{ timestamp?: number } | null> }).getBlock('latest');
-      const currentTime = currentBlock?.timestamp || Math.floor(Date.now() / 1000);
-      const revealTime = Number(battleRequest.revealTime);
-      
-      if (currentTime < revealTime) {
-        const remaining = revealTime - currentTime;
-        throw new Error(`Need to wait ${remaining} more seconds to reveal battle result`);
-      }
-
-      if (battleRequest.isRevealed) {
-        throw new Error('This battle has already been revealed');
-      }
-
-      if (!battleRequest.isPending) {
-        throw new Error('This battle has already been completed');
-      }
 
       const data = nftContract.interface.encodeFunctionData('revealBattle', [BigInt(battle.requestId)]);
       const receipt = await sendTxWithPopup({
@@ -490,7 +470,6 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
                 <button
                   onClick={async () => {
                     try {
-                      // Request accounts first to ensure wallet is active (especially after long wait)
                       try { await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }); } catch (err) {
                         const msg = err instanceof Error ? err.message : String(err);
                         if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) return;

@@ -730,7 +730,6 @@ export default function TrainingSection() {
     try {
       setStartingTokens(prev => new Set(prev).add(tokenId));
       
-      // Request accounts first to ensure wallet is active (especially after long wait)
       try {
         await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> });
       } catch (err) {
@@ -743,17 +742,6 @@ export default function TrainingSection() {
       }
       
       const nft = await getContract();
-
-      try {
-        const st = await nft.getUpgradeState(tokenId);
-        const inProgress = Boolean(st.inProgress ?? st[0]);
-        const completeAt = Number(st.completeAt ?? st[1] ?? 0);
-        if (inProgress) {
-          const remain = Math.max(0, completeAt - Math.floor(Date.now() / 1000));
-          showNotification(`Training in progress, can be completed in ${Math.ceil(remain)} seconds`, 'info');
-          return;
-        }
-      } catch {}
 
       const data = nft.interface.encodeFunctionData('startUpgrade', [BigInt(tokenId)]);
       if (!provider) throw new Error('Provider not ready');
@@ -827,7 +815,6 @@ export default function TrainingSection() {
     try {
       setFinishingTokens(prev => new Set(prev).add(tokenId));
       
-      // Request accounts first to ensure wallet is active (especially after long wait)
       try { await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> }); } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
@@ -835,20 +822,6 @@ export default function TrainingSection() {
           return;
         }
         throw err;
-      }
-      
-      const nftRead = new ethers.Contract(CONTRACT_ADDRESSES.NFT_DARK_FOREST, DarkForestNFTABI, provider);
-      const st = await nftRead.getUpgradeState(tokenId);
-      const completeAt = Number(st.completeAt ?? st[1]);
-      if (!provider) throw new Error('Wallet not available');
-      const currentBlock = await provider.getBlock('latest');
-      const blockTimestamp = currentBlock!.timestamp;
-      const bufferUntil = completeAt + 5;
-      
-      if (blockTimestamp < bufferUntil) {
-        const remaining = bufferUntil - blockTimestamp;
-        showNotification(`Training not ready yet, please wait ${remaining} seconds`, 'info');
-        return;
       }
       
       const nft = await getContract();
