@@ -8,6 +8,7 @@ import { useNotificationContext } from '@/contexts/NotificationContext';
 import HeroCard from './HeroCard';
 import { ipfsToHttp } from '@/config/ipfs';
 import { readWithFallback, getReadOnlyProvider } from '@/lib/provider';
+import SlotMachineNumber from './SlotMachineNumber';
 
 const HERO_CLASSES = [
   {
@@ -51,6 +52,7 @@ export default function MintSection() {
   const [totalMinted, setTotalMinted] = useState<number>(0);
   const [displayedCount, setDisplayedCount] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isSpinning, setIsSpinning] = useState<boolean>(false);
   const retryCountRef = useRef(0);
 
   useEffect(() => {
@@ -90,32 +92,17 @@ export default function MintSection() {
 
   useEffect(() => {
     if (isLoading) {
-      const interval = setInterval(() => {
-        setDisplayedCount(prev => {
-          const next = prev + Math.floor(Math.random() * 5) + 1;
-          return next > 100 ? Math.floor(Math.random() * 50) : next;
-        });
-      }, 100);
-      return () => clearInterval(interval);
+      setIsSpinning(true);
     } else {
-      const duration = 800;
-      const steps = 30;
-      const increment = (totalMinted - displayedCount) / steps;
-      let currentStep = 0;
-
-      const interval = setInterval(() => {
-        currentStep++;
-        if (currentStep >= steps) {
-          setDisplayedCount(totalMinted);
-          clearInterval(interval);
-        } else {
-          setDisplayedCount(prev => Math.round(prev + increment));
-        }
-      }, duration / steps);
-
-      return () => clearInterval(interval);
+      setIsSpinning(true);
+      setTimeout(() => {
+        setDisplayedCount(totalMinted);
+        setTimeout(() => {
+          setIsSpinning(false);
+        }, 1500);
+      }, 100);
     }
-  }, [isLoading, totalMinted, displayedCount]);
+  }, [isLoading, totalMinted]);
 
   const handleMint = async () => {
     if (!isConnected || !provider || !address) {
@@ -288,8 +275,8 @@ export default function MintSection() {
 
           <p className="mt-1 text-center text-gray-400">
             Currently there are{' '}
-            <span className="text-red-400 text-xl font-semibold align-baseline transition-all duration-100">
-              {displayedCount}
+            <span className="text-red-400 text-xl font-semibold align-baseline drop-shadow-[0_0_8px_rgba(248,113,113,0.8)] inline-block">
+              <SlotMachineNumber value={displayedCount} isSpinning={isSpinning} />
             </span>{' '}
             heroes roaming in the Dark Forest
           </p>
