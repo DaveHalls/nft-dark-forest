@@ -33,12 +33,9 @@ export default function Home() {
             <div className="flex justify-between items-center mb-2">
               <div className="flex items-center gap-2">
                 <Image src="/icons/pixel-eye-red.svg" alt="logo" width={20} height={20} className="inline-block" />
-                <div className="flex items-baseline gap-3">
-                  <h1 className="text-2xl font-bold text-gray-200">
-                    NFT Dark Forest
-                  </h1>
-                  <p className="text-xs text-yellow-500">Powered by Zama FHE Technology</p>
-                </div>
+                <h1 className="text-2xl font-bold text-gray-200">
+                  NFT Dark Forest
+                </h1>
               </div>
               <WalletConnect />
             </div>
