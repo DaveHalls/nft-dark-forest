@@ -13,7 +13,7 @@ export const DarkForestTokenABI = [
         "type": "uint256"
       }
     ],
-    "name": "ConfidentialFungibleTokenInvalidGatewayRequest",
+    "name": "ERC7984InvalidGatewayRequest",
     "type": "error"
   },
   {
@@ -24,7 +24,7 @@ export const DarkForestTokenABI = [
         "type": "address"
       }
     ],
-    "name": "ConfidentialFungibleTokenInvalidReceiver",
+    "name": "ERC7984InvalidReceiver",
     "type": "error"
   },
   {
@@ -35,7 +35,7 @@ export const DarkForestTokenABI = [
         "type": "address"
       }
     ],
-    "name": "ConfidentialFungibleTokenInvalidSender",
+    "name": "ERC7984InvalidSender",
     "type": "error"
   },
   {
@@ -46,7 +46,7 @@ export const DarkForestTokenABI = [
         "type": "address"
       }
     ],
-    "name": "ConfidentialFungibleTokenUnauthorizedCaller",
+    "name": "ERC7984UnauthorizedCaller",
     "type": "error"
   },
   {
@@ -62,7 +62,7 @@ export const DarkForestTokenABI = [
         "type": "address"
       }
     ],
-    "name": "ConfidentialFungibleTokenUnauthorizedSpender",
+    "name": "ERC7984UnauthorizedSpender",
     "type": "error"
   },
   {
@@ -78,7 +78,7 @@ export const DarkForestTokenABI = [
         "type": "address"
       }
     ],
-    "name": "ConfidentialFungibleTokenUnauthorizedUseOfEncryptedAmount",
+    "name": "ERC7984UnauthorizedUseOfEncryptedAmount",
     "type": "error"
   },
   {
@@ -89,12 +89,7 @@ export const DarkForestTokenABI = [
         "type": "address"
       }
     ],
-    "name": "ConfidentialFungibleTokenZeroBalance",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "HandlesAlreadySavedForRequestID",
+    "name": "ERC7984ZeroBalance",
     "type": "error"
   },
   {
@@ -104,8 +99,27 @@ export const DarkForestTokenABI = [
   },
   {
     "inputs": [],
-    "name": "NoHandleFoundForRequestID",
+    "name": "ZamaProtocolUnsupported",
     "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "euint64",
+        "name": "encryptedAmount",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "requester",
+        "type": "address"
+      }
+    ],
+    "name": "AmountDiscloseRequested",
+    "type": "event"
   },
   {
     "anonymous": false,
@@ -156,19 +170,6 @@ export const DarkForestTokenABI = [
     "inputs": [
       {
         "indexed": true,
-        "internalType": "uint256",
-        "name": "requestID",
-        "type": "uint256"
-      }
-    ],
-    "name": "DecryptionFulfilled",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
         "internalType": "address",
         "name": "to",
         "type": "address"
@@ -206,6 +207,25 @@ export const DarkForestTokenABI = [
       }
     ],
     "name": "OperatorSet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "bytes32[]",
+        "name": "handlesList",
+        "type": "bytes32[]"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes",
+        "name": "abiEncodedCleartexts",
+        "type": "bytes"
+      }
+    ],
+    "name": "PublicDecryptionVerified",
     "type": "event"
   },
   {
@@ -254,6 +274,19 @@ export const DarkForestTokenABI = [
         "internalType": "euint64",
         "name": "",
         "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "confidentialProtocolId",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -526,6 +559,19 @@ export const DarkForestTokenABI = [
   },
   {
     "inputs": [],
+    "name": "contractURI",
+    "outputs": [
+      {
+        "internalType": "string",
+        "name": "",
+        "type": "string"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "decimals",
     "outputs": [
       {
@@ -543,6 +589,16 @@ export const DarkForestTokenABI = [
         "internalType": "euint64",
         "name": "encryptedAmount",
         "type": "bytes32"
+      },
+      {
+        "internalType": "uint64",
+        "name": "cleartextAmount",
+        "type": "uint64"
+      },
+      {
+        "internalType": "bytes",
+        "name": "decryptionProof",
+        "type": "bytes"
       }
     ],
     "name": "discloseEncryptedAmount",
@@ -567,29 +623,6 @@ export const DarkForestTokenABI = [
       }
     ],
     "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "requestId",
-        "type": "uint256"
-      },
-      {
-        "internalType": "bytes",
-        "name": "cleartexts",
-        "type": "bytes"
-      },
-      {
-        "internalType": "bytes",
-        "name": "decryptionProof",
-        "type": "bytes"
-      }
-    ],
-    "name": "finalizeDiscloseEncryptedAmount",
-    "outputs": [],
-    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -702,16 +735,16 @@ export const DarkForestTokenABI = [
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "protocolId",
-    "outputs": [
+    "inputs": [
       {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
+        "internalType": "euint64",
+        "name": "encryptedAmount",
+        "type": "bytes32"
       }
     ],
-    "stateMutability": "pure",
+    "name": "requestDiscloseEncryptedAmount",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -764,13 +797,19 @@ export const DarkForestTokenABI = [
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "symbol",
+    "inputs": [
+      {
+        "internalType": "bytes4",
+        "name": "interfaceId",
+        "type": "bytes4"
+      }
+    ],
+    "name": "supportsInterface",
     "outputs": [
       {
-        "internalType": "string",
+        "internalType": "bool",
         "name": "",
-        "type": "string"
+        "type": "bool"
       }
     ],
     "stateMutability": "view",
@@ -778,7 +817,7 @@ export const DarkForestTokenABI = [
   },
   {
     "inputs": [],
-    "name": "tokenURI",
+    "name": "symbol",
     "outputs": [
       {
         "internalType": "string",

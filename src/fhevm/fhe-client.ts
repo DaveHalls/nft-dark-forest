@@ -87,3 +87,39 @@ export async function decrypt64(ciphertext: string): Promise<bigint> {
   return instance.decrypt64(ciphertext);
 }
 
+export async function publicDecrypt(handles: string[]): Promise<{
+  clearValues: Record<string, bigint | boolean | string>;
+  abiEncodedClearValues: string;
+  decryptionProof: string;
+}> {
+  const instance = getFhevmInstance() as {
+    publicDecrypt: (handles: string[]) => Promise<{
+      clearValues: Record<string, bigint | boolean | string>;
+      abiEncodedClearValues: string;
+      decryptionProof: string;
+    }>;
+  };
+  
+  // Add retry logic for rate limiting
+  let retries = 3;
+  let lastError;
+  
+  while (retries > 0) {
+    try {
+      return await instance.publicDecrypt(handles);
+    } catch (error) {
+      lastError = error;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('Too Many Requests') && retries > 1) {
+        console.log(`Rate limited, retrying in 2 seconds... (${retries - 1} retries left)`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        retries--;
+      } else {
+        throw error;
+      }
+    }
+  }
+  
+  throw lastError;
+}
+

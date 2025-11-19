@@ -7,7 +7,10 @@ import { useWalletContext } from '@/contexts/WalletContext';
 import { CONTRACT_ADDRESSES, DarkForestNFTABI } from '@/config';
 import { ipfsToHttp } from '@/config/ipfs';
 import { makeKey, getJSON, setJSON, remove as removeCache } from '@/lib/cache';
-import { requestAccountsOrThrow, sendTxWithPopup, readWithFallback } from '@/lib/provider';
+import { requestAccountsOrThrow, readWithFallback } from '@/lib/provider';
+import { publicDecrypt, initFhevm } from '@/fhevm/fhe-client';
+import { useFheInstance } from '@/hooks/useFheInstance';
+import { DEFAULT_CHAIN } from '@/config/chains';
 
 export interface BattleInfo {
   requestId: string;
@@ -45,6 +48,7 @@ interface BattleArenaProps {
 
 export default function BattleArena({ battleList, nftList, onBattleUpdate, onBattleRemove, onBattleComplete, onClearCache, isLoading }: BattleArenaProps) {
   const { provider, chainId, address } = useWalletContext();
+  const { instance: fheInstance } = useFheInstance();
   const [countdowns, setCountdowns] = useState<Record<string, number>>({});
   const [bufferCountdowns, setBufferCountdowns] = useState<Record<string, number>>({});
   const [externalNFTs, setExternalNFTs] = useState<Record<number, NFTInfo>>({});
@@ -52,6 +56,28 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
   const completedOnce = useRef<Set<string>>(new Set());
   const revealedOnce = useRef<Set<string>>(new Set());
   const scopedKey = useCallback((...parts: Array<string | number>) => makeKey(['battle', chainId || 'na', address || 'na', CONTRACT_ADDRESSES.NFT_DARK_FOREST, ...parts]), [chainId, address]);
+  const fheInitialized = useRef(false);
+
+  // 确保 FHE 实例初始化
+  useEffect(() => {
+    const ensureFheInitialized = async () => {
+      if (!fheInstance && !fheInitialized.current && provider && chainId) {
+        try {
+          const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || DEFAULT_CHAIN.rpcUrls[0];
+          const gatewayUrl = CONTRACT_ADDRESSES.GATEWAY || process.env.NEXT_PUBLIC_GATEWAY_ADDRESS;
+          const targetChainId = parseInt(DEFAULT_CHAIN.chainId.startsWith('0x') ? DEFAULT_CHAIN.chainId.slice(2) : DEFAULT_CHAIN.chainId, 16);
+          
+          await initFhevm(rpcUrl, targetChainId, gatewayUrl);
+          fheInitialized.current = true;
+          console.log('FHE instance initialized for BattleArena');
+        } catch (error) {
+          console.error('Failed to initialize FHE instance in BattleArena:', error);
+        }
+      }
+    };
+
+    ensureFheInitialized();
+  }, [provider, chainId, fheInstance]);
 
   useEffect(() => {
     const seenCompleted = getJSON<string[]>(scopedKey('seenCompleted')) || [];
@@ -262,28 +288,99 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
         signer
       );
 
-      const data = nftContract.interface.encodeFunctionData('revealBattle', [BigInt(battle.requestId)]);
-      const receipt = await sendTxWithPopup({
-        provider: provider as unknown as ethers.BrowserProvider & { send: (m: string, p?: unknown[]) => Promise<unknown> },
-        signer,
-        to: CONTRACT_ADDRESSES.NFT_DARK_FOREST,
-        data,
-        gasHex: '0x2dc6c0',
-        fallbackSend: async () => {
-          const tx = await nftContract.revealBattle(BigInt(battle.requestId), { gasLimit: 3000000 });
-          return { hash: tx.hash } as { hash: string };
-        },
-        notify: (m, t) => { try { (window as unknown as { __notify?: (msg: string, type: string) => void }).__notify?.(m, t); } catch {} },
-        pendingTip: 'Transaction submitted but not confirmed yet',
-      });
+      // Step 1: Call revealBattle to get handles
+      const tx = await nftContract.revealBattle(BigInt(battle.requestId), { gasLimit: 3000000 });
+      const receipt = await tx.wait();
       if (!receipt) {
         onBattleUpdate(battle.requestId, { error: 'Transaction submitted but not confirmed yet' });
         return;
       }
 
-      console.log('Reveal request submitted, waiting for Gateway processing...');
+      // Get handles from contract (revealBattle should have made them available)
+      let handles: string[] = [];
+      try {
+        // Try to get handles from the contract
+        const rawHandles = await nftContract.getRevealHandles(BigInt(battle.requestId));
+        // Convert Proxy/Result to regular array
+        handles = Array.from(rawHandles as Iterable<string>);
+      } catch (getHandlesErr) {
+        console.log('Failed to get handles:', getHandlesErr);
+        // If getting handles fails, battle might already be completed
+        onBattleUpdate(battle.requestId, { error: 'Failed to get decryption handles, battle might already be revealed' });
+        return;
+      }
 
+      if (handles.length === 0) {
+        onBattleUpdate(battle.requestId, { error: 'Failed to get decryption handles' });
+        return;
+      }
+
+      console.log('Reveal request submitted, decrypting data...');
       onBattleUpdate(battle.requestId, { status: 'revealing', error: undefined });
+
+      try {
+        // 确保 FHE 实例已初始化
+        if (!fheInstance && !fheInitialized.current) {
+          console.log('Initializing FHE instance before decryption...');
+          const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || DEFAULT_CHAIN.rpcUrls[0];
+          const gatewayUrl = CONTRACT_ADDRESSES.GATEWAY || process.env.NEXT_PUBLIC_GATEWAY_ADDRESS;
+          const targetChainId = parseInt(DEFAULT_CHAIN.chainId.startsWith('0x') ? DEFAULT_CHAIN.chainId.slice(2) : DEFAULT_CHAIN.chainId, 16);
+          
+          try {
+            await initFhevm(rpcUrl, targetChainId, gatewayUrl);
+            fheInitialized.current = true;
+            console.log('FHE instance initialized successfully');
+          } catch (initErr) {
+            console.error('Failed to initialize FHE instance:', initErr);
+            throw new Error('Failed to initialize encryption service. Please refresh the page and try again.');
+          }
+        }
+
+        // Step 2: Decrypt the data using publicDecrypt
+        console.log('Decrypting with handles:', handles);
+        const decryptResults = await publicDecrypt(handles);
+        console.log('Decryption results:', decryptResults);
+
+        // Step 3: Submit the decrypted result back to contract
+        const verifyTx = await nftContract.verifyAndFinishBattle(
+          BigInt(battle.requestId),
+          handles,
+          decryptResults.abiEncodedClearValues,
+          decryptResults.decryptionProof,
+          { gasLimit: 3000000 }
+        );
+        await verifyTx.wait();
+        console.log('Battle verification submitted');
+      } catch (decryptErr) {
+        console.error('Failed to decrypt or verify battle:', decryptErr);
+        const errorMsg = decryptErr instanceof Error ? decryptErr.message : String(decryptErr);
+        
+        // 提供更具体的错误信息
+        let userErrorMsg = 'Failed to decrypt battle result';
+        if (errorMsg.includes('FHE instance not initialized')) {
+          userErrorMsg = 'Encryption service not ready, please refresh the page';
+        } else if (errorMsg.includes('Failed to initialize encryption service')) {
+          userErrorMsg = errorMsg; // 使用我们自定义的错误信息
+        } else if (errorMsg.includes('Too Many Requests') || errorMsg.includes('429')) {
+          userErrorMsg = 'Service is busy, please try again in a few seconds';
+        } else if (errorMsg.includes('Network request failed')) {
+          userErrorMsg = 'Network error, please check your connection and try again';
+        } else if (errorMsg.includes('Invalid handles')) {
+          userErrorMsg = 'Invalid battle data, please refresh and try again';
+        } else if (errorMsg.includes('publicDecrypt')) {
+          userErrorMsg = 'Failed to decrypt battle data, please try again';
+        } else if (errorMsg.includes('verifyAndFinishBattle')) {
+          userErrorMsg = 'Failed to verify battle result on-chain';
+        } else if (errorMsg.includes('checkSignatures')) {
+          userErrorMsg = 'Failed to verify decryption proof';
+        }
+        
+        onBattleUpdate(battle.requestId, { 
+          error: userErrorMsg,
+          status: 'waiting' 
+        });
+        return;
+      }
 
       // Listen for BattleEnded event (using strict filter + once to prevent duplicates)
       const filter = nftContract.filters.BattleEnded(BigInt(battle.requestId));
@@ -331,14 +428,14 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
       revealedOnce.current.add(battle.requestId);
       try { setJSON(scopedKey('seenRevealed'), Array.from(revealedOnce.current), 86400); } catch {}
 
-      // Set timeout (prevent indefinite waiting), fallback to manual polling after timeout
+      // Set timeout for event listening (v0.9 should be much faster since no Gateway needed)
       setTimeout(() => {
         // If event not received after timeout, manually refresh and check
-        console.log('⏰ Gateway callback timeout, please refresh page later to check result');
+        console.log('⏰ Event listener timeout, checking battle status...');
         if (onBattleComplete) {
           onBattleComplete();
         }
-      }, 1800000); // 30 minutes timeout (testnet requires longer time)
+      }, 30000); // 30 seconds timeout (v0.9 is much faster)
     } catch (err) {
       console.error('Failed to reveal battle:', err);
       
@@ -373,9 +470,9 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
             if (onBattleComplete) onBattleComplete();
             return;
           }
-          // Still pending but revealed: maintain revealing, prompt to wait for callback
-          console.log('Battle revealed but callback not completed yet, please wait...');
-          onBattleUpdate(battle.requestId, { status: 'revealing', error: 'Reveal request submitted, waiting for Zama Gateway callback...' });
+          // Still pending but revealed: maintain revealing status
+          console.log('Battle revealed but not yet verified, please complete decryption...');
+          onBattleUpdate(battle.requestId, { status: 'revealing', error: 'Battle revealed, please complete the decryption process' });
           return;
         } catch (readErr) {
           console.error('Failed to read battle status:', readErr);
@@ -465,7 +562,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
             {battle.status === 'revealing' && (
               <div className="flex flex-col items-center mt-4 gap-2">
                 <div className="inline-block animate-spin rounded-full h-5 w-5 border-3 border-gray-600 border-t-yellow-500"></div>
-                <p className="text-yellow-400 text-xs font-semibold whitespace-nowrap">Waiting for Zama Gateway callback...</p>
+                <p className="text-yellow-400 text-xs font-semibold whitespace-nowrap">Decrypting battle result...</p>
                 <button
                   onClick={async () => {
                     try {
@@ -481,18 +578,39 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
                         DarkForestNFTABI,
                         signer
                       );
-                      const data = nftContract.interface.encodeFunctionData('retryReveal', [BigInt(battle.requestId)]);
-                      await sendTxWithPopup({
-                        provider: provider as unknown as ethers.BrowserProvider & { send: (m: string, p?: unknown[]) => Promise<unknown> },
-                        signer,
-                        to: CONTRACT_ADDRESSES.NFT_DARK_FOREST,
-                        data,
-                        fallbackSend: async () => {
-                          const tx = await nftContract.retryReveal(BigInt(battle.requestId));
-                          return { hash: tx.hash } as { hash: string };
-                        },
-                        notify: (m, t) => { try { (window as unknown as { __notify?: (msg: string, type: string) => void }).__notify?.(m, t); } catch {} },
-                      });
+                      
+                      // 确保 FHE 实例已初始化
+                      if (!fheInstance && !fheInitialized.current) {
+                        console.log('Initializing FHE instance for retry...');
+                        const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || DEFAULT_CHAIN.rpcUrls[0];
+                        const gatewayUrl = CONTRACT_ADDRESSES.GATEWAY || process.env.NEXT_PUBLIC_GATEWAY_ADDRESS;
+                        const targetChainId = parseInt(DEFAULT_CHAIN.chainId.startsWith('0x') ? DEFAULT_CHAIN.chainId.slice(2) : DEFAULT_CHAIN.chainId, 16);
+                        
+                        try {
+                          await initFhevm(rpcUrl, targetChainId, gatewayUrl);
+                          fheInitialized.current = true;
+                          console.log('FHE instance initialized successfully for retry');
+                        } catch (initErr) {
+                          console.error('Failed to initialize FHE instance for retry:', initErr);
+                          onBattleUpdate(battle.requestId, { error: 'Failed to initialize encryption service. Please refresh the page.' });
+                          return;
+                        }
+                      }
+                      
+                      // Get handles and retry decryption
+                      const rawHandles = await nftContract.getRevealHandles(BigInt(battle.requestId));
+                      // Convert Proxy/Result to regular array
+                      const handles = Array.from(rawHandles as Iterable<string>);
+                      const decryptResults = await publicDecrypt(handles);
+                      const verifyTx = await nftContract.verifyAndFinishBattle(
+                        BigInt(battle.requestId),
+                        handles,
+                        decryptResults.abiEncodedClearValues,
+                        decryptResults.decryptionProof,
+                        { gasLimit: 3000000 }
+                      );
+                      await verifyTx.wait();
+                      console.log('Retry verification submitted');
                     } catch (err) {
                       console.error('Failed to retry reveal:', err);
                     }

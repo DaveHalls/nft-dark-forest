@@ -110,17 +110,7 @@ export const DarkForestNFTABI = [
   },
   {
     "inputs": [],
-    "name": "HandlesAlreadySavedForRequestID",
-    "type": "error"
-  },
-  {
-    "inputs": [],
     "name": "InvalidKMSSignatures",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "NoHandleFoundForRequestID",
     "type": "error"
   },
   {
@@ -143,6 +133,11 @@ export const DarkForestNFTABI = [
       }
     ],
     "name": "OwnableUnauthorizedAccount",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ZamaProtocolUnsupported",
     "type": "error"
   },
   {
@@ -311,63 +306,6 @@ export const DarkForestNFTABI = [
     "inputs": [
       {
         "indexed": true,
-        "internalType": "uint256",
-        "name": "decryptRequestId",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "cleartextsLength",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "caller",
-        "type": "address"
-      }
-    ],
-    "name": "DebugCallback",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "requestID",
-        "type": "uint256"
-      }
-    ],
-    "name": "DecryptionFulfilled",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "requestId",
-        "type": "uint256"
-      },
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "decryptRequestId",
-        "type": "uint256"
-      }
-    ],
-    "name": "DecryptionRequested",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
         "internalType": "address",
         "name": "owner",
         "type": "address"
@@ -399,6 +337,25 @@ export const DarkForestNFTABI = [
       }
     ],
     "name": "OwnershipTransferred",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "bytes32[]",
+        "name": "handlesList",
+        "type": "bytes32[]"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes",
+        "name": "abiEncodedCleartexts",
+        "type": "bytes"
+      }
+    ],
+    "name": "PublicDecryptionVerified",
     "type": "event"
   },
   {
@@ -620,29 +577,6 @@ export const DarkForestNFTABI = [
     "inputs": [
       {
         "internalType": "uint256",
-        "name": "requestId",
-        "type": "uint256"
-      },
-      {
-        "internalType": "bytes",
-        "name": "cleartexts",
-        "type": "bytes"
-      },
-      {
-        "internalType": "bytes",
-        "name": "decryptionProof",
-        "type": "bytes"
-      }
-    ],
-    "name": "battleCallback",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
         "name": "",
         "type": "uint256"
       }
@@ -673,6 +607,19 @@ export const DarkForestNFTABI = [
     "name": "claimRewards",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "confidentialProtocolId",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -921,19 +868,6 @@ export const DarkForestNFTABI = [
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "getOracleAddress",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "inputs": [
       {
         "internalType": "uint256",
@@ -972,13 +906,19 @@ export const DarkForestNFTABI = [
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "getProtocolId",
-    "outputs": [
+    "inputs": [
       {
         "internalType": "uint256",
-        "name": "",
+        "name": "requestId",
         "type": "uint256"
+      }
+    ],
+    "name": "getRevealHandles",
+    "outputs": [
+      {
+        "internalType": "bytes32[]",
+        "name": "handles",
+        "type": "bytes32[]"
       }
     ],
     "stateMutability": "view",
@@ -1116,19 +1056,6 @@ export const DarkForestNFTABI = [
   },
   {
     "inputs": [],
-    "name": "protocolId",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "pure",
-    "type": "function"
-  },
-  {
-    "inputs": [],
     "name": "renounceOwnership",
     "outputs": [],
     "stateMutability": "nonpayable",
@@ -1142,21 +1069,14 @@ export const DarkForestNFTABI = [
         "type": "uint256"
       }
     ],
-    "name": "retryReveal",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
+    "name": "revealBattle",
+    "outputs": [
       {
-        "internalType": "uint256",
-        "name": "requestId",
-        "type": "uint256"
+        "internalType": "bytes32[]",
+        "name": "handles",
+        "type": "bytes32[]"
       }
     ],
-    "name": "revealBattle",
-    "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
   },
@@ -1435,6 +1355,34 @@ export const DarkForestNFTABI = [
       }
     ],
     "name": "transferOwnership",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "requestId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32[]",
+        "name": "handles",
+        "type": "bytes32[]"
+      },
+      {
+        "internalType": "bytes",
+        "name": "abiEncodedClearValues",
+        "type": "bytes"
+      },
+      {
+        "internalType": "bytes",
+        "name": "decryptionProof",
+        "type": "bytes"
+      }
+    ],
+    "name": "verifyAndFinishBattle",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
