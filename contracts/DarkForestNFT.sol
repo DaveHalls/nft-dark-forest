@@ -2,12 +2,11 @@
 pragma solidity ^0.8.24;
 
 import {FHE, euint8, euint16, euint64, ebool} from "@fhevm/solidity/lib/FHE.sol";
-import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
-import {Impl} from "@fhevm/solidity/lib/Impl.sol";
+import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract DarkForestNFT is ERC721, Ownable, SepoliaConfig {
+contract DarkForestNFT is ERC721, Ownable, ZamaEthereumConfig {
     uint256 private _nextTokenId = 1;
     uint256 public constant COOLDOWN_TIME = 5 hours;
     uint256 public constant WIN_REWARD = 1000;
@@ -62,8 +61,6 @@ contract DarkForestNFT is ERC721, Ownable, SepoliaConfig {
     mapping(uint256 => BattleRequest) private battleRequests;
     mapping(uint256 => uint256) private tokenIdToBattleRequest;
     mapping(uint256 => UpgradeState) private upgradeStates;
-    // Decryption requestId => business requestId mapping for callback restoration
-    mapping(uint256 => uint256) private decryptToBusinessRequest;
     // Separate mapping for encrypted results to preserve FHE references
     mapping(uint256 => euint64) private battleResults;
     // Additional encrypted explanation fields per request
@@ -103,8 +100,6 @@ contract DarkForestNFT is ERC721, Ownable, SepoliaConfig {
         uint8 attackerCrit,
         uint8 defenderCrit
     );
-    event DebugCallback(uint256 indexed decryptRequestId, uint256 cleartextsLength, address caller);
-    event DecryptionRequested(uint256 indexed requestId, uint256 indexed decryptRequestId);
     event UpgradeStarted(uint256 indexed tokenId, uint8 attrIndex, uint256 completeAt);
     event UpgradeFinished(uint256 indexed tokenId, uint8 attrIndex, bool success);
     event RewardAccrued(address indexed user, uint256 amount);
@@ -262,7 +257,7 @@ contract DarkForestNFT is ERC721, Ownable, SepoliaConfig {
         return requestId;
     }
 
-    function revealBattle(uint256 requestId) external {
+    function revealBattle(uint256 requestId) external returns (bytes32[] memory handles) {
         BattleRequest storage request = battleRequests[requestId];
         require(request.isPending, "Battle not pending");
         require(!request.isRevealed, "Already revealed");
@@ -283,54 +278,51 @@ contract DarkForestNFT is ERC721, Ownable, SepoliaConfig {
         FHE.allowThis(attackerCritEnc);
         FHE.allowThis(defenderCritEnc);
 
-        // Make all ciphertexts publicly decryptable for Oracle processing (v0.8)
+        // Make all ciphertexts publicly decryptable for v0.9 self-relaying
         FHE.makePubliclyDecryptable(encryptedResult);
         FHE.makePubliclyDecryptable(reasonEnc);
         FHE.makePubliclyDecryptable(fasterEnc);
         FHE.makePubliclyDecryptable(attackerCritEnc);
         FHE.makePubliclyDecryptable(defenderCritEnc);
 
-        bytes32[] memory cts = new bytes32[](5);
-        cts[0] = FHE.toBytes32(encryptedResult);
-        cts[1] = FHE.toBytes32(reasonEnc);
-        cts[2] = FHE.toBytes32(fasterEnc);
-        cts[3] = FHE.toBytes32(attackerCritEnc);
-        cts[4] = FHE.toBytes32(defenderCritEnc);
-
-        uint256 decryptRequestId = FHE.requestDecryption(cts, this.battleCallback.selector);
-        decryptToBusinessRequest[decryptRequestId] = requestId;
+        // Return handles for frontend to decrypt
+        handles = new bytes32[](5);
+        handles[0] = FHE.toBytes32(encryptedResult);
+        handles[1] = FHE.toBytes32(reasonEnc);
+        handles[2] = FHE.toBytes32(fasterEnc);
+        handles[3] = FHE.toBytes32(attackerCritEnc);
+        handles[4] = FHE.toBytes32(defenderCritEnc);
 
         emit BattleRevealed(requestId, request.attackerId, request.defenderId);
-        emit DecryptionRequested(requestId, decryptRequestId);
+
+        return handles;
     }
 
-    function battleCallback(uint256 requestId, bytes memory cleartexts, bytes memory decryptionProof) external {
+    function verifyAndFinishBattle(
+        uint256 requestId,
+        bytes32[] memory handles,
+        bytes memory abiEncodedClearValues,
+        bytes memory decryptionProof
+    ) external {
         // 1. Verify KMS signatures (prevent forged decryption results)
-        FHE.checkSignatures(requestId, cleartexts, decryptionProof);
+        FHE.checkSignatures(handles, abiEncodedClearValues, decryptionProof);
 
-        // 2. Get corresponding business request ID (replay protection)
-        uint256 businessRequestId = decryptToBusinessRequest[requestId];
-        require(businessRequestId != 0, "Invalid or already processed request");
-
-        // 3. Remove mapping to prevent replay (but allow retry via new request if needed)
-        delete decryptToBusinessRequest[requestId];
-
-        BattleRequest storage request = battleRequests[businessRequestId];
+        BattleRequest storage request = battleRequests[requestId];
         require(request.isPending, "Battle not pending");
         require(request.isRevealed, "Battle not revealed");
 
-        // 4. Decode decrypted result and explanations
+        // 2. Decode decrypted result and explanations
         (uint64 resultValue, uint8 reasonCode, uint8 faster, uint8 attackerCrit, uint8 defenderCrit) = abi.decode(
-            cleartexts,
+            abiEncodedClearValues,
             (uint64, uint8, uint8, uint8, uint8)
         );
         bool attackerWins = resultValue != 0;
 
-        // 5. Update battle result
+        // 3. Update battle result
         request.attackerWins = attackerWins;
         request.isPending = false;
 
-        // 6. Update battle records and cooldown - only affects attacker (initiator)
+        // 4. Update battle records and cooldown - only affects attacker (initiator)
         // Defender is completely unaffected (no record, no cooldown)
         if (attackerWins) {
             battleRecords[request.attackerId].wins++;
@@ -341,34 +333,24 @@ contract DarkForestNFT is ERC721, Ownable, SepoliaConfig {
             // No cooldown on defeat, can battle again immediately
         }
 
-        // 7. Clear attacker's pending battle flag
+        // 5. Clear attacker's pending battle flag
         delete tokenIdToBattleRequest[request.attackerId];
 
-        // 8. Accrue winner reward - changed to accumulated rewards, claimed manually from frontend
+        // 6. Accrue winner reward - changed to accumulated rewards, claimed manually from frontend
         if (attackerWins) {
             address attackerOwner = ownerOf(request.attackerId);
             pendingRewards[attackerOwner] += WIN_REWARD;
             emit RewardAccrued(attackerOwner, WIN_REWARD);
         }
 
-        // 9. Emit battle end event
+        // 7. Emit battle end event
         uint256 winnerId = attackerWins ? request.attackerId : request.defenderId;
         uint256 loserId = attackerWins ? request.defenderId : request.attackerId;
         address winnerOwner = ownerOf(winnerId);
-        emit BattleEnded(
-            businessRequestId,
-            winnerId,
-            loserId,
-            winnerOwner,
-            reasonCode,
-            faster,
-            attackerCrit,
-            defenderCrit
-        );
-        emit DebugCallback(requestId, cleartexts.length, msg.sender);
+        emit BattleEnded(requestId, winnerId, loserId, winnerOwner, reasonCode, faster, attackerCrit, defenderCrit);
     }
 
-    function retryReveal(uint256 requestId) external {
+    function getRevealHandles(uint256 requestId) external view returns (bytes32[] memory handles) {
         BattleRequest storage request = battleRequests[requestId];
         require(request.isPending, "Battle not pending");
         require(request.isRevealed, "Not revealed yet");
@@ -380,30 +362,15 @@ contract DarkForestNFT is ERC721, Ownable, SepoliaConfig {
         euint8 attackerCritEnc = battleAttackerCrit[requestId];
         euint8 defenderCritEnc = battleDefenderCrit[requestId];
 
-        FHE.allowThis(encryptedResult);
-        FHE.allowThis(reasonEnc);
-        FHE.allowThis(fasterEnc);
-        FHE.allowThis(attackerCritEnc);
-        FHE.allowThis(defenderCritEnc);
+        // Return handles for frontend to decrypt again if needed
+        handles = new bytes32[](5);
+        handles[0] = FHE.toBytes32(encryptedResult);
+        handles[1] = FHE.toBytes32(reasonEnc);
+        handles[2] = FHE.toBytes32(fasterEnc);
+        handles[3] = FHE.toBytes32(attackerCritEnc);
+        handles[4] = FHE.toBytes32(defenderCritEnc);
 
-        // Make all ciphertexts publicly decryptable for Oracle processing (v0.8)
-        FHE.makePubliclyDecryptable(encryptedResult);
-        FHE.makePubliclyDecryptable(reasonEnc);
-        FHE.makePubliclyDecryptable(fasterEnc);
-        FHE.makePubliclyDecryptable(attackerCritEnc);
-        FHE.makePubliclyDecryptable(defenderCritEnc);
-
-        bytes32[] memory cts = new bytes32[](5);
-        cts[0] = FHE.toBytes32(encryptedResult);
-        cts[1] = FHE.toBytes32(reasonEnc);
-        cts[2] = FHE.toBytes32(fasterEnc);
-        cts[3] = FHE.toBytes32(attackerCritEnc);
-        cts[4] = FHE.toBytes32(defenderCritEnc);
-
-        uint256 decryptRequestId = FHE.requestDecryption(cts, this.battleCallback.selector);
-        decryptToBusinessRequest[decryptRequestId] = requestId;
-
-        emit DecryptionRequested(requestId, decryptRequestId);
+        return handles;
     }
 
     function _selectRandomOpponent(uint256 attackerTokenId) private view returns (uint256) {
@@ -577,13 +544,19 @@ contract DarkForestNFT is ERC721, Ownable, SepoliaConfig {
         return result;
     }
 
-    function tokensOfOwnerWithDetails(address owner) external view returns (
-        uint256[] memory tokenIds,
-        uint8[] memory classIds,
-        uint256[] memory wins,
-        uint256[] memory losses,
-        uint256[] memory cooldowns
-    ) {
+    function tokensOfOwnerWithDetails(
+        address owner
+    )
+        external
+        view
+        returns (
+            uint256[] memory tokenIds,
+            uint8[] memory classIds,
+            uint256[] memory wins,
+            uint256[] memory losses,
+            uint256[] memory cooldowns
+        )
+    {
         uint256 supply = _nextTokenId - 1;
         uint256[] memory tempIds = new uint256[](supply);
         uint8[] memory tempClasses = new uint8[](supply);
@@ -600,8 +573,8 @@ contract DarkForestNFT is ERC721, Ownable, SepoliaConfig {
                     BattleRecord memory record = battleRecords[i];
                     tempWins[count] = record.wins;
                     tempLosses[count] = record.losses;
-                    tempCooldowns[count] = block.timestamp >= record.cooldownUntil 
-                        ? 0 
+                    tempCooldowns[count] = block.timestamp >= record.cooldownUntil
+                        ? 0
                         : record.cooldownUntil - block.timestamp;
                     count++;
                 }
@@ -615,7 +588,7 @@ contract DarkForestNFT is ERC721, Ownable, SepoliaConfig {
         wins = new uint256[](count);
         losses = new uint256[](count);
         cooldowns = new uint256[](count);
-        
+
         for (uint256 i = 0; i < count; i++) {
             tokenIds[i] = tempIds[i];
             classIds[i] = tempClasses[i];
@@ -732,20 +705,6 @@ contract DarkForestNFT is ERC721, Ownable, SepoliaConfig {
         emit UpgradeFinished(tokenId, st.pendingAttr, randomResult);
 
         delete upgradeStates[tokenId];
-    }
-
-    /**
-     * @dev Debug function: Get current configured Oracle address
-     */
-    function getOracleAddress() external view returns (address) {
-        return Impl.getCoprocessorConfig().DecryptionOracleAddress;
-    }
-
-    /**
-     * @dev Debug function: Get protocol ID
-     */
-    function getProtocolId() external view returns (uint256) {
-        return this.protocolId();
     }
 
     function getEncryptedAttributes(

@@ -2,15 +2,13 @@
 pragma solidity ^0.8.27;
 
 import {FHE, euint64, ebool, externalEuint64} from "@fhevm/solidity/lib/FHE.sol";
-import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
-import {
-    ConfidentialFungibleToken
-} from "openzeppelin-confidential-contracts/contracts/token/ConfidentialFungibleToken.sol";
+import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
+import {ERC7984} from "./lib/openzeppelin/token/ERC7984/ERC7984.sol";
 
 /// @title DarkForest Token
 /// @notice Confidential ERC-20 token for Dark Forest game
-/// @dev Based on OpenZeppelin's ConfidentialFungibleToken implementation
-contract DarkForestToken is SepoliaConfig, ConfidentialFungibleToken {
+/// @dev Based on OpenZeppelin's ERC7984 confidential token implementation
+contract DarkForestToken is ZamaEthereumConfig, ERC7984 {
     uint64 public totalSupply;
     uint256 public constant MAX_SUPPLY = 10_000_000_000;
 
@@ -29,7 +27,7 @@ contract DarkForestToken is SepoliaConfig, ConfidentialFungibleToken {
 
     event Minted(address indexed to, uint64 amount);
 
-    constructor() ConfidentialFungibleToken("DarkForest", "DF", "") {
+    constructor() ERC7984("DarkForest", "DF", "") {
         owner = msg.sender;
         totalSupply = 0;
     }
