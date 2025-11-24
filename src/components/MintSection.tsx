@@ -54,6 +54,7 @@ export default function MintSection() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSpinning, setIsSpinning] = useState<boolean>(false);
   const retryCountRef = useRef(0);
+  const hasInitialized = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,13 +95,20 @@ export default function MintSection() {
     if (isLoading) {
       setIsSpinning(true);
     } else {
-      setIsSpinning(true);
-      setTimeout(() => {
-        setDisplayedCount(totalMinted);
+      if (!hasInitialized.current) {
+        // 初始加载时播放滚动动画
+        hasInitialized.current = true;
+        setIsSpinning(true);
         setTimeout(() => {
-          setIsSpinning(false);
-        }, 1500);
-      }, 100);
+          setDisplayedCount(totalMinted);
+          setTimeout(() => {
+            setIsSpinning(false);
+          }, 1500);
+        }, 100);
+      } else {
+        // 后续更新直接显示，不播放动画
+        setDisplayedCount(totalMinted);
+      }
     }
   }, [isLoading, totalMinted]);
 
