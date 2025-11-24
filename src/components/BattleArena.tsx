@@ -269,13 +269,16 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
   const handleReveal = async (battle: BattleInfo) => {
     if (!provider) return;
 
+    // 立即更新状态，显示正在处理
+    onBattleUpdate(battle.requestId, { status: 'revealing', error: undefined });
+
     try {
       try {
         await requestAccountsOrThrow(provider as unknown as { send: (m: string, p?: unknown[]) => Promise<unknown> });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('ACTION_REJECTED')) {
-          onBattleUpdate(battle.requestId, { error: 'Reveal cancelled by user' });
+          onBattleUpdate(battle.requestId, { status: 'waiting', error: 'Reveal cancelled by user' });
           return;
         }
         throw err;
@@ -292,7 +295,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
       const tx = await nftContract.revealBattle(BigInt(battle.requestId), { gasLimit: 3000000 });
       const receipt = await tx.wait();
       if (!receipt) {
-        onBattleUpdate(battle.requestId, { error: 'Transaction submitted but not confirmed yet' });
+        onBattleUpdate(battle.requestId, { status: 'waiting', error: 'Transaction submitted but not confirmed yet' });
         return;
       }
 
@@ -306,17 +309,16 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
       } catch (getHandlesErr) {
         console.log('Failed to get handles:', getHandlesErr);
         // If getting handles fails, battle might already be completed
-        onBattleUpdate(battle.requestId, { error: 'Failed to get decryption handles, battle might already be revealed' });
+        onBattleUpdate(battle.requestId, { status: 'waiting', error: 'Failed to get decryption handles, battle might already be revealed' });
         return;
       }
 
       if (handles.length === 0) {
-        onBattleUpdate(battle.requestId, { error: 'Failed to get decryption handles' });
+        onBattleUpdate(battle.requestId, { status: 'waiting', error: 'Failed to get decryption handles' });
         return;
       }
 
       console.log('Reveal request submitted, decrypting data...');
-      onBattleUpdate(battle.requestId, { status: 'revealing', error: undefined });
 
       try {
         // 确保 FHE 实例已初始化
@@ -349,8 +351,67 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
           decryptResults.decryptionProof,
           { gasLimit: 3000000 }
         );
-        await verifyTx.wait();
-        console.log('Battle verification submitted');
+        const verifyReceipt = await verifyTx.wait();
+        console.log('Battle verification submitted and confirmed');
+        
+        // 立即查询战斗结果，不依赖事件
+        try {
+          const req = await nftContract.getBattleRequest(BigInt(battle.requestId));
+          const isPending = (req.isPending as boolean) === true;
+          const attackerWins = (req.attackerWins as boolean) === true;
+          
+          if (!isPending) {
+            const result = attackerWins ? 'win' : 'loss';
+            console.log('Battle completed immediately after verification:', result);
+            
+            // 获取战斗详情（可选）
+            let reasonCode = 0;
+            let faster = 0;
+            let attackerCrit = 0;
+            let defenderCrit = 0;
+            
+            // 尝试从交易收据中解析事件获取详细信息
+            try {
+              const events = verifyReceipt.logs.filter((log: ethers.Log | ethers.EventLog) => {
+                try {
+                  const parsed = nftContract.interface.parseLog(log);
+                  return parsed?.name === 'BattleEnded';
+                } catch {
+                  return false;
+                }
+              });
+              
+              if (events.length > 0) {
+                const parsed = nftContract.interface.parseLog(events[0]);
+                reasonCode = Number(parsed?.args?.reasonCode || 0);
+                faster = Number(parsed?.args?.faster || 0);
+                attackerCrit = Number(parsed?.args?.attackerCrit || 0);
+                defenderCrit = Number(parsed?.args?.defenderCrit || 0);
+              }
+            } catch (eventErr) {
+              console.log('Could not parse event details:', eventErr);
+            }
+            
+            // 直接更新战斗状态为完成
+            if (!completedOnce.current.has(battle.requestId)) {
+              completedOnce.current.add(battle.requestId);
+              try { setJSON(scopedKey('seenCompleted'), Array.from(completedOnce.current), 86400); } catch {}
+              onBattleUpdate(battle.requestId, {
+                status: 'completed',
+                result,
+                reasonCode,
+                faster,
+                attackerCrit,
+                defenderCrit,
+              });
+              if (onBattleComplete) onBattleComplete();
+            }
+            return; // 战斗已完成，直接返回
+          }
+        } catch (statusErr) {
+          console.error('Failed to query battle status after verification:', statusErr);
+          // 继续执行，依赖事件监听作为后备方案
+        }
       } catch (decryptErr) {
         console.error('Failed to decrypt or verify battle:', decryptErr);
         const errorMsg = decryptErr instanceof Error ? decryptErr.message : String(decryptErr);
@@ -376,8 +437,8 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
         }
         
         onBattleUpdate(battle.requestId, { 
-          error: userErrorMsg,
-          status: 'waiting' 
+          status: 'waiting',
+          error: userErrorMsg
         });
         return;
       }
@@ -482,7 +543,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
         }
       }
 
-      onBattleUpdate(battle.requestId, { error: errorMsg });
+      onBattleUpdate(battle.requestId, { status: 'waiting', error: errorMsg });
     }
   };
 
