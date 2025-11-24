@@ -58,7 +58,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
   const scopedKey = useCallback((...parts: Array<string | number>) => makeKey(['battle', chainId || 'na', address || 'na', CONTRACT_ADDRESSES.NFT_DARK_FOREST, ...parts]), [chainId, address]);
   const fheInitialized = useRef(false);
 
-  // 确保 FHE 实例初始化
+  // Ensure FHE instance is initialized
   useEffect(() => {
     const ensureFheInitialized = async () => {
       if (!fheInstance && !fheInitialized.current && provider && chainId) {
@@ -269,7 +269,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
   const handleReveal = async (battle: BattleInfo) => {
     if (!provider) return;
 
-    // 立即更新状态，显示正在处理
+    // Immediately update status to show processing
     onBattleUpdate(battle.requestId, { status: 'revealing', error: undefined });
 
     try {
@@ -321,7 +321,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
       console.log('Reveal request submitted, decrypting data...');
 
       try {
-        // 确保 FHE 实例已初始化
+        // Ensure FHE instance is initialized
         if (!fheInstance && !fheInitialized.current) {
           console.log('Initializing FHE instance before decryption...');
           const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || DEFAULT_CHAIN.rpcUrls[0];
@@ -354,7 +354,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
         const verifyReceipt = await verifyTx.wait();
         console.log('Battle verification submitted and confirmed');
         
-        // 立即查询战斗结果，不依赖事件
+        // Query battle result immediately, don't rely on events
         try {
           const req = await nftContract.getBattleRequest(BigInt(battle.requestId));
           const isPending = (req.isPending as boolean) === true;
@@ -364,13 +364,13 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
             const result = attackerWins ? 'win' : 'loss';
             console.log('Battle completed immediately after verification:', result);
             
-            // 获取战斗详情（可选）
+            // Get battle details (optional)
             let reasonCode = 0;
             let faster = 0;
             let attackerCrit = 0;
             let defenderCrit = 0;
             
-            // 尝试从交易收据中解析事件获取详细信息
+            // Try to parse event from transaction receipt for details
             try {
               const events = verifyReceipt.logs.filter((log: ethers.Log | ethers.EventLog) => {
                 try {
@@ -392,7 +392,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
               console.log('Could not parse event details:', eventErr);
             }
             
-            // 直接更新战斗状态为完成
+            // Directly update battle status to completed
             if (!completedOnce.current.has(battle.requestId)) {
               completedOnce.current.add(battle.requestId);
               try { setJSON(scopedKey('seenCompleted'), Array.from(completedOnce.current), 86400); } catch {}
@@ -406,22 +406,22 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
               });
               if (onBattleComplete) onBattleComplete();
             }
-            return; // 战斗已完成，直接返回
+            return; // Battle completed, return directly
           }
         } catch (statusErr) {
           console.error('Failed to query battle status after verification:', statusErr);
-          // 继续执行，依赖事件监听作为后备方案
+          // Continue execution, rely on event listener as fallback
         }
       } catch (decryptErr) {
         console.error('Failed to decrypt or verify battle:', decryptErr);
         const errorMsg = decryptErr instanceof Error ? decryptErr.message : String(decryptErr);
         
-        // 提供更具体的错误信息
+        // Provide more specific error messages
         let userErrorMsg = 'Failed to decrypt battle result';
         if (errorMsg.includes('FHE instance not initialized')) {
           userErrorMsg = 'Encryption service not ready, please refresh the page';
         } else if (errorMsg.includes('Failed to initialize encryption service')) {
-          userErrorMsg = errorMsg; // 使用我们自定义的错误信息
+          userErrorMsg = errorMsg; // Use our custom error message
         } else if (errorMsg.includes('Too Many Requests') || errorMsg.includes('429')) {
           userErrorMsg = 'Service is busy, please try again in a few seconds';
         } else if (errorMsg.includes('Network request failed')) {
@@ -640,7 +640,7 @@ export default function BattleArena({ battleList, nftList, onBattleUpdate, onBat
                         signer
                       );
                       
-                      // 确保 FHE 实例已初始化
+                      // Ensure FHE instance is initialized
                       if (!fheInstance && !fheInitialized.current) {
                         console.log('Initializing FHE instance for retry...');
                         const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || DEFAULT_CHAIN.rpcUrls[0];
