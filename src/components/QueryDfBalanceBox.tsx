@@ -81,7 +81,8 @@ export default function QueryDfBalanceBox() {
             const s = await ep.getSigner();
             return s.getAddress();
           })();
-      const resolvedUserAddress = typeof userAddress === 'string' ? userAddress : await userAddress;
+      const rawUserAddress = typeof userAddress === 'string' ? userAddress : await userAddress;
+      const resolvedUserAddress = ethers.getAddress(rawUserAddress);
       if (process.env.NODE_ENV !== 'production') console.log('[Query] network/address', { chainId: network.chainId, userAddress: resolvedUserAddress });
 
       const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL;
@@ -112,12 +113,14 @@ export default function QueryDfBalanceBox() {
 
       const keypair = (instance as FheInstance).generateKeypair();
       if (process.env.NODE_ENV !== 'production') console.log('[Query] keypair generated');
+      // Ensure contract address has correct checksum
+      const tokenAddress = ethers.getAddress(CONTRACT_ADDRESSES.FHE_TOKEN);
       const handleContractPairs = [
-        { handle: encBal, contractAddress: CONTRACT_ADDRESSES.FHE_TOKEN },
+        { handle: encBal, contractAddress: tokenAddress },
       ];
       const startTimeStamp = Math.floor(Date.now() / 1000).toString();
       const durationDays = '10';
-      const contractAddresses = [CONTRACT_ADDRESSES.FHE_TOKEN];
+      const contractAddresses = [tokenAddress];
 
       const eip712 = (instance as FheInstance).createEIP712(
         keypair.publicKey,
