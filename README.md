@@ -5,7 +5,7 @@
 This is a fully-featured on-chain NFT battle game powered by Zama Fully Homomorphic Encryption technology. All battle calculations are performed on-chain through FHE encryption, attributes remain completely private, and battle results are asynchronously decrypted via Zama Gateway. NFT value is determined by a single public attribute: win-loss record.
 
 
-![NFT Dark Forest](./public/image.png)
+
 ## Contract Features Summary
 
 ### Key Design Features
